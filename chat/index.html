@@ -1,0 +1,184 @@
+<section v-if="!channel" class="chat-box">
+    <p><em>Invalid chat link. Go back to <router-link to="/home">Create Chat</router-link>.</em></p>
+</section>
+
+<template v-else>
+    <section class="chat-screen">
+        <aside class="chat-settings">
+            <h2>Chat Settings</h2>
+            <p><strong>Name:</strong> {{ currentChatName }}</p>
+            <p><strong>Max Players:</strong> {{ currentChatPlayers }}</p>
+            <p><strong>Chat ID:</strong> {{ channel }}</p>
+            <div class="sidebar-actions">
+                <button type="button" @click="openGameOverlay()" class="sidebar_button">Game</button>
+                <button type="button" @click="openChatOverlay()" class="sidebar_button">Chat</button>
+                <button type="button" @click="togglePlayersDropdown()" class="sidebar_button">Players</button>
+            </div>
+            <div v-if="showPlayersDropdown" class="players-dropdown">
+                <p><strong>Other players</strong></p>
+                <ul>
+                    <li v-if="!otherUsersInChat.length"><em>No other users found yet.</em></li>
+                    <li v-for="user of otherUsersInChat" :key="user.actor">
+                        <button type="button" @click="onPlayerClick(user)">{{ user.name }}</button>
+                    </li>
+                </ul>
+            </div>
+            <button type="button" class="leave-chat" @click="leaveChat()">Leave Chat</button>
+        </aside>
+
+        <section class="chat-window">
+            <h2>Messages</h2>
+            <div class="message-list">
+                <p v-if="areMessageObjectsLoading">
+                    <em>Loading messages...</em>
+                </p>
+                <ul v-else>
+                    <li
+                        v-for="object of visibleMessageObjects"
+                        :key="object.url"
+                        :class="{ 'own-message': object.actor === $graffitiSession.value?.actor }"
+                    >
+                        <div class="message-row">
+                            <button
+                                type="button"
+                                class="message-avatar avatar-button"
+                                @click="onProfileAvatarClick(object)"
+                            >
+                                <img
+                                    v-if="object.value.profileAvatar"
+                                    :src="object.value.profileAvatar"
+                                    :alt="object.value.profileName || 'profile avatar'"
+                                />
+                                <span v-else>{{ profileInitials(object.value.profileName || 'User') }}</span>
+                            </button>
+                            <div class="message-body">
+                                <strong class="message-name">
+                                    {{ object.value.profileName || 'Unknown user' }}
+                                </strong>
+                                <p class="message-text">{{ object.value.content }}</p>
+                                <small v-if="object.value.privateToActor" class="pm-tag">
+                                    Private message to {{ object.value.privateToNickname }}
+                                </small>
+                            </div>
+                        </div>
+                        <button
+                            v-if="object.actor === $graffitiSession.value?.actor"
+                            type="button"
+                            @click="deleteMessage(object)"
+                            :disabled="isDeleting.has(object.url)"
+                            class="delete_button"
+                        >
+                            {{ isDeleting.has(object.url) ? 'Deleting...' : 'Delete' }}
+                        </button>
+                    </li>
+                </ul>
+            </div>
+
+            <form @submit.prevent="sendMessage()" class="message-composer">
+                <div class="profile-menu-anchor">
+                    <button type="button" class="profile-toggle" @click="toggleProfileMenu()">
+                        <div class="message-avatar small">
+                            <img
+                                v-if="activeProfile?.avatar"
+                                :src="activeProfile.avatar"
+                                :alt="activeProfile.name || 'active profile avatar'"
+                            />
+                            <span v-else>{{ profileInitials(activeProfile?.name || 'Me') }}</span>
+                        </div>
+                        <span>{{ activeProfile?.name || 'Profile' }}</span>
+                    </button>
+                    <div v-if="showProfileMenu" class="profile-popup">
+                        <p><strong>Profiles for this chat</strong></p>
+                        <ul class="profile-list">
+                            <li v-for="profile of currentProfiles" :key="profile.id">
+                                <button type="button" @click="selectProfile(profile.id)">
+                                    {{ profile.name }}
+                                </button>
+                                <button
+                                    type="button"
+                                    class="danger"
+                                    @click="removeProfile(profile.id)"
+                                    :disabled="currentProfiles.length <= 1"
+                                >
+                                    Remove
+                                </button>
+                            </li>
+                        </ul>
+                        <div class="profile-create-form">
+                            <input type="text" v-model="newProfileName" placeholder="New profile name" />
+                            <input
+                                type="text"
+                                v-model="newProfileAvatar"
+                                placeholder="Avatar image URL (optional)"
+                            />
+                            <button type="button" @click="createProfile()" :disabled="!newProfileName.trim()">
+                                Add Profile
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <input
+                    type="text"
+                    v-model="myMessage"
+                    @input="handleMessageInput()"
+                    placeholder="Message"
+                />
+                <input
+                    type="submit"
+                    :value="isSending ? 'Sending...' : 'Send'"
+                    :disabled="!myMessage || isSending"
+                />
+            </form>
+            <p v-if="privateMessageTarget" class="pm-draft-indicator">
+                Sending privately to <strong>{{ privateMessageTarget.name }}</strong>. Remove
+                <code>@[{{ privateMessageTarget.name }}]</code> to cancel.
+            </p>
+            <p v-if="sendError" class="send-error">{{ sendError }}</p>
+        </section>
+    </section>
+
+    <div v-if="showGameOverlay" class="overlay-backdrop" @click.self="closeOverlays()">
+        <section class="overlay-card">
+            <h3>Game Settings</h3>
+            <label>
+                Enable full rulebook for all players
+                <input type="checkbox" />
+            </label>
+
+            <label>
+                Enable summary bot for chat
+                <input type="checkbox" />
+            </label>
+
+            <form>
+                <label for="change_game">Change Game:</label>
+                <select id="change_game" name="change_game">
+                    <option value="D&D">D&amp;D</option>
+                    <option value="Catan">Catan</option>
+                    <option value="BoTC">Blood on the Clocktower</option>
+                    <option value="Pathfinder">Pathfinder</option>
+                    <option value="Other">Other</option>
+                </select>
+                <input type="submit" />
+            </form>
+
+            <button type="button" @click="closeOverlays()">Close</button>
+        </section>
+    </div>
+    <div v-if="showChatOverlay" class="overlay-backdrop" @click.self="closeOverlays()">
+        <section class="overlay-card">
+            <h3>Chat Settings</h3>
+            <label>
+                Change number of players:
+                <input type="number" min="1" />
+            </label>
+
+            <form>
+                <input type="search" id="search" name="search" placeholder="Search Chat" />
+                <button type="submit">Search</button>
+            </form>
+
+            <button type="button" @click="closeOverlays()">Close</button>
+        </section>
+    </div>
+</template>

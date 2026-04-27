@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>PartyUp</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link
+            href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&display=swap"
+            rel="stylesheet"
+        />
+        <script type="importmap">
+            {
+                "imports": {
+                    "vue": "https://cdn.jsdelivr.net/npm/vue@3.5.32/dist/vue.esm-browser.js",
+                    "vue-router": "https://cdn.jsdelivr.net/npm/vue-router@5.0.4/dist/vue-router.esm-browser.prod.js",
+                    "@graffiti-garden/implementation-local": "https://cdn.jsdelivr.net/npm/@graffiti-garden/implementation-local@1.2.0/dist/browser/index.js",
+                    "@graffiti-garden/implementation-decentralized": "https://cdn.jsdelivr.net/npm/@graffiti-garden/implementation-decentralized@0.0.9/dist/browser/index.js",
+                    "@graffiti-garden/wrapper-vue": "https://cdn.jsdelivr.net/npm/@graffiti-garden/wrapper-vue@1.2.2/dist/browser/plugin.mjs"
+                }
+            }
+        </script>
+        <link rel="stylesheet" href="./style.css" />
+        <script src="./main.js" type="module"></script>
+    </head>
+    <body>
+        <div id="app">Loading...</div>
+        <template id="template">
+            <header>
+                <h1 class="header_h1">
+                    <router-link v-if="isChatRoute" :to="{ name: 'home' }" class="header-link">
+                        {{ headerTitle }}
+                    </router-link>
+                    <router-link v-else :to="{ name: 'home' }" class="header-link"> PartyUp </router-link>
+                </h1>
+                <button v-if="!$graffitiSession.value" @click="$graffiti.login()" class="login">Log In</button>
+                <template v-else>
+                    <button @click="$graffiti.logout($graffitiSession.value)" class="logout">Log Out</button>
+                </template>
+            </header>
+
+            <main v-if="$graffitiSession.value">
+                <router-view></router-view>
+            </main>
+            <main v-else-if="$graffitiSession.value === null">
+                <p><em>Log in to begin chatting!</em></p>
+            </main>
+            <main v-else>
+                <p><em>Loading session...</em></p>
+            </main>
+        </template>
+    </body>
+</html>

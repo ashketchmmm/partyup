@@ -1,0 +1,54 @@
+<section class="chat-layout">
+                <article class="chat-box create-chat-box">
+                    <h2>Create Chat</h2>
+                    <form @submit.prevent="newChat()" class="stack">
+                        <input type="text" v-model="chatTitle" placeholder="Chat Title" />
+                        <label class="inline-field">
+                            <b>Players:</b>
+                            <input type="number" min="1" v-model.number="chatPlayers" />
+                        </label>
+                        <label class="inline-field">
+                            <b>Private:</b>
+                            <input type="checkbox" v-model="chatPrivacy" />
+                        </label>
+                        <button type="submit" :disabled="!chatTitle || isRandomizing">
+                            {{ isRandomizing ? "Creating..." : "Create Chat" }}
+                        </button>
+                    </form>
+                </article>
+
+                <article class="chat-box">
+                    <h2>Enter Chat ID</h2>
+                    <form @submit.prevent="joinKnownChat()" class="stack">
+                        <input
+                            type="text"
+                            v-model="knownChatId"
+                            placeholder="Paste known chat ID"
+                        />
+                        <button type="submit" :disabled="!knownChatId.trim()">
+                            Join Chat
+                        </button>
+                    </form>
+                    <h3>Chats</h3>
+                    <ul class="chat-list">
+                        <li v-if="!knownChats.length"><em>No known chats yet.</em></li>
+                        <li v-for="chat of knownChats" :key="chat.channel">
+                            <button @click="openKnownChat(chat)" class="chat-link">
+                                {{ chat.title }} <small>({{ chat.channel }})</small>
+                            </button>
+                        </li>
+                    </ul>
+                </article>
+
+                <article class="chat-box">
+                    <h2>Global Chats</h2>
+                    <ul class="chat-list">
+                        <li v-if="!globalChats.length"><em>No global chats yet.</em></li>
+                        <li v-for="chat of globalChats" :key="chat.url">
+                            <button @click="changeChat(chat)" class="chat-link">
+                                {{ chat.value.title }}
+                            </button>
+                        </li>
+                    </ul>
+                </article>
+            </section>
