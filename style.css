@@ -39,7 +39,7 @@ body {
     filter: brightness(1.12);
   }
 
-  .header-home-nav-link.router-link-active {
+  .header-home-nav-link.header-home-nav-link--active {
     background-color: #f2f5ff;
     color: #0f1a56;
     border-color: #f2f5ff;
@@ -526,10 +526,12 @@ body {
   
   .leave-chat {
     margin-top: auto;
-    background: #b32b2b;
-    color: white;
+    /* background: #b32b2b; */
+    /* color: white; */
     border-radius: 5px;
     padding: 0.5rem 0.75rem;
+    color: black;
+    background-color: #d5e6ff;
   }
   
   .overlay-backdrop {

@@ -5,8 +5,14 @@ import {
   useGraffitiSession,
   useGraffitiDiscover,
 } from "@graffiti-garden/wrapper-vue";
-import { lookupKnownChatTitle, lookupKnownChatPlayers } from "../shared/known-chats.js";
+import {
+  lookupKnownChatTitle,
+  lookupKnownChatPlayers,
+  addKnownChat,
+  loadAllKnownChats,
+} from "../shared/known-chats.js";
 import { getMainProfile } from "../shared/main-profile.js";
+import { UserAvatar } from "../components/user-avatar.js";
 
 const profilesStorageKey = "partyup-chat-profiles";
 
@@ -154,11 +160,6 @@ function chatSetup(props) {
     showProfileMenu.value = !showProfileMenu.value;
   }
 
-  function profileInitials(profileName) {
-    if (!profileName) return "?";
-    return profileName.trim().slice(0, 2).toUpperCase();
-  }
-
   const { objects: chats } = useGraffitiDiscover(
     () => (session.value ? ["partyup-26"] : []),
     {
@@ -198,6 +199,43 @@ function chatSetup(props) {
       "Unknown"
     );
   });
+
+  function persistKnownChatForCurrentChannel() {
+    const ch = channel.value;
+    const ses = session.value;
+    if (!ch || !ses?.actor) return;
+    const all = loadAllKnownChats();
+    addKnownChat(all, ses, {
+      channel: ch,
+      title: lookupKnownChatTitle(ses, ch) || "Known Chat",
+      players: lookupKnownChatPlayers(ses, ch),
+    });
+  }
+
+  // Remember any chat the user opens (URL, bookmark, deep link), not only lobby flows.
+  watch(
+    () => [channel.value, session.value?.actor],
+    () => {
+      persistKnownChatForCurrentChannel();
+    },
+    { immediate: true },
+  );
+
+  // When Graffiti discovers the Create object, refresh stored title/players (watch url, not a new object each tick).
+  watch(
+    () => currentChat.value?.url,
+    (url) => {
+      if (!url || !channel.value || !session.value?.actor) return;
+      const v = currentChat.value?.value;
+      if (!v || v.channel !== channel.value) return;
+      const all = loadAllKnownChats();
+      addKnownChat(all, session.value, {
+        channel: channel.value,
+        title: String(v.title || "").trim() || "Known Chat",
+        players: typeof v.players === "number" ? v.players : null,
+      });
+    },
+  );
 
   function leaveChat() {
     myMessage.value = "";
@@ -453,12 +491,12 @@ function chatSetup(props) {
     selectProfile,
     createProfile,
     removeProfile,
-    profileInitials,
   };
 }
 
 export default async () => ({
   props: ["chatId"],
+  components: { UserAvatar },
   setup: chatSetup,
   template: await fetch(new URL("./index.html", import.meta.url)).then((r) => r.text()),
 });

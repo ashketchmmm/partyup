@@ -1,15 +1,16 @@
 <section class="profile-page chat-box">
-    <h2>Your default profile</h2>
+    <h2>Default Profile</h2>
     <p class="profile-page-lead">
-        New chats start with this name and avatar. You can still add or switch profiles inside each chat.
+        New chats start with this name and avatar. You can still add or switch profiles inside each chat!
     </p>
     <form class="profile-page-form stack" @submit.prevent="saveProfile()">
         <label class="inline-field profile-page-preview-label">
-            <span>Preview</span>
-            <div class="message-avatar profile-page-avatar">
-                <img v-if="avatarUrl.trim()" :src="avatarUrl.trim()" :alt="displayName || 'avatar'" />
-                <span v-else>{{ initials }}</span>
-            </div>
+            <span><b>Preview</b></span>
+            <UserAvatar
+                size="large"
+                :name="displayName.trim() || 'Me'"
+                :image-url="avatarUrl"
+            />
         </label>
         <label class="stack-label">
             Display name

@@ -1,6 +1,7 @@
 import { ref, computed, watch } from "vue";
 import { useGraffitiSession } from "@graffiti-garden/wrapper-vue";
 import { getMainProfile, saveMainProfile } from "../shared/main-profile.js";
+import { UserAvatar } from "../components/user-avatar.js";
 
 function setup() {
   const session = useGraffitiSession();
@@ -23,11 +24,6 @@ function setup() {
     { immediate: true },
   );
 
-  const initials = computed(() => {
-    const n = displayName.value.trim() || "Me";
-    return n.slice(0, 2).toUpperCase();
-  });
-
   const canSave = computed(() => Boolean(session.value));
 
   function saveProfile() {
@@ -46,7 +42,6 @@ function setup() {
   return {
     displayName,
     avatarUrl,
-    initials,
     canSave,
     saveProfile,
     savedHint,
@@ -54,6 +49,7 @@ function setup() {
 }
 
 export default async () => ({
+  components: { UserAvatar },
   setup,
   template: await fetch(new URL("./index.html", import.meta.url)).then((r) => r.text()),
 });

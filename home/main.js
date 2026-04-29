@@ -1,4 +1,4 @@
-import { ref, computed } from "vue";
+import { ref, computed, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useGraffiti, useGraffitiSession, useGraffitiDiscover } from "@graffiti-garden/wrapper-vue";
 import {
@@ -23,7 +23,30 @@ function setup() {
     persistKnownChat(allKnownChats.value, session.value, chatInfo);
   }
 
-  const knownChats = computed(() => getCurrentUserKnownChats(allKnownChats.value, session.value));
+  const knownChats = computed(() => {
+    const list = getCurrentUserKnownChats(allKnownChats.value, session.value);
+    return [...list];
+  });
+
+  watch(
+    () => session.value?.actor,
+    (actor) => {
+      if (actor) {
+        allKnownChats.value = loadAllKnownChats();
+      }
+    },
+    { immediate: true },
+  );
+
+  watch(
+    () => router.currentRoute.value.name,
+    (name) => {
+      if (name === "home") {
+        allKnownChats.value = loadAllKnownChats();
+      }
+    },
+    { immediate: true },
+  );
 
   const { objects: chats } = useGraffitiDiscover(
     () => (session.value ? ["partyup-26"] : []),

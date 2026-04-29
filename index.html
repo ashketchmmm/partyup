@@ -35,8 +35,20 @@
                     <router-link v-else :to="{ name: 'home' }" class="header-link"> PartyUp </router-link>
                 </h1>
                 <nav v-if="showHomeNav" class="header-home-nav" aria-label="Lobby and profile">
-                    <router-link class="header-home-nav-link" :to="{ name: 'home' }">Lobby</router-link>
-                    <router-link class="header-home-nav-link" :to="{ name: 'profile' }">Profile</router-link>
+                    <router-link
+                        class="header-home-nav-link"
+                        :class="{ 'header-home-nav-link--active': $route.name === 'home' }"
+                        :to="{ name: 'home' }"
+                    >
+                        Lobby
+                    </router-link>
+                    <router-link
+                        class="header-home-nav-link"
+                        :class="{ 'header-home-nav-link--active': $route.name === 'profile' }"
+                        :to="{ name: 'profile' }"
+                    >
+                        Profile
+                    </router-link>
                 </nav>
                 <div class="header-actions">
                     <button v-if="!$graffitiSession.value" @click="$graffiti.login()" class="login">Log In</button>

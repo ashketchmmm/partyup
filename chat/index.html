@@ -39,18 +39,12 @@
                         :class="{ 'own-message': object.actor === $graffitiSession.value?.actor }"
                     >
                         <div class="message-row">
-                            <button
-                                type="button"
-                                class="message-avatar avatar-button"
+                            <UserAvatar
+                                :name="object.value.profileName || 'User'"
+                                :image-url="object.value.profileAvatar"
+                                :clickable="object.actor !== $graffitiSession.value?.actor"
                                 @click="onProfileAvatarClick(object)"
-                            >
-                                <img
-                                    v-if="object.value.profileAvatar"
-                                    :src="object.value.profileAvatar"
-                                    :alt="object.value.profileName || 'profile avatar'"
-                                />
-                                <span v-else>{{ profileInitials(object.value.profileName || 'User') }}</span>
-                            </button>
+                            />
                             <div class="message-body">
                                 <strong class="message-name">
                                     {{ object.value.profileName || 'Unknown user' }}
@@ -77,14 +71,11 @@
             <form @submit.prevent="sendMessage()" class="message-composer">
                 <div class="profile-menu-anchor">
                     <button type="button" class="profile-toggle" @click="toggleProfileMenu()">
-                        <div class="message-avatar small">
-                            <img
-                                v-if="activeProfile?.avatar"
-                                :src="activeProfile.avatar"
-                                :alt="activeProfile.name || 'active profile avatar'"
-                            />
-                            <span v-else>{{ profileInitials(activeProfile?.name || 'Me') }}</span>
-                        </div>
+                        <UserAvatar
+                            size="small"
+                            :name="activeProfile?.name || 'Me'"
+                            :image-url="activeProfile?.avatar || ''"
+                        />
                         <span>{{ activeProfile?.name || 'Profile' }}</span>
                     </button>
                     <div v-if="showProfileMenu" class="profile-popup">
