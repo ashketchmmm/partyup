@@ -6,6 +6,7 @@ import {
   useGraffitiDiscover,
 } from "@graffiti-garden/wrapper-vue";
 import { lookupKnownChatTitle, lookupKnownChatPlayers } from "../shared/known-chats.js";
+import { getMainProfile } from "../shared/main-profile.js";
 
 const profilesStorageKey = "partyup-chat-profiles";
 
@@ -55,10 +56,11 @@ function chatSetup(props) {
   }
 
   function createDefaultProfile() {
+    const main = getMainProfile(session.value);
     return {
       id: crypto.randomUUID(),
-      name: "Me",
-      avatar: "",
+      name: main.name || "Me",
+      avatar: main.avatar || "",
     };
   }
 

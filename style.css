@@ -12,7 +12,45 @@ body {
       box-sizing: border-box;
       display: flex;
       align-items: center;
-      justify-content: space-between;
+      gap: 0.75rem;
+  }
+
+  .header-home-nav {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .header-home-nav-link {
+    padding: 0.45rem 0.85rem;
+    border-radius: 8px;
+    border: 2px solid rgba(213, 230, 255, 0.45);
+    background-color: rgba(242, 245, 255, 0.12);
+    color: #d5e6ff;
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  .header-home-nav-link:hover {
+    filter: brightness(1.12);
+  }
+
+  .header-home-nav-link.router-link-active {
+    background-color: #f2f5ff;
+    color: #0f1a56;
+    border-color: #f2f5ff;
+  }
+
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+    margin-left: auto;
   }
   
   main {
@@ -109,6 +147,70 @@ body {
     grid-template-columns: 0.4fr 1fr 1.2fr;
     gap: 1rem;
     margin-bottom: 1rem;
+    align-items: start;
+  }
+
+  .chat-box-global {
+    max-height: calc(100vh - 9rem);
+    overflow-y: auto;
+    align-self: start;
+    min-height: 0;
+  }
+
+  .profile-page {
+    max-width: 32rem;
+  }
+
+  .profile-page-lead {
+    margin: 0 0 1rem;
+    color: #2a3860;
+    font-size: 0.95rem;
+  }
+
+  .profile-page-form.stack {
+    gap: 0.75rem;
+  }
+
+  .stack-label {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.35rem;
+    width: 100%;
+  }
+
+  .stack-label input[type="text"] {
+    width: 100%;
+    max-width: 28rem;
+    box-sizing: border-box;
+    border-radius: 8px;
+    border: 1px solid #8fa2d0;
+    padding: 0.45rem 0.55rem;
+  }
+
+  .profile-page-preview-label {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.35rem;
+  }
+
+  .profile-page-avatar {
+    width: 3rem;
+    height: 3rem;
+    font-size: 1rem;
+  }
+
+  .profile-page-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .profile-page-saved {
+    font-size: 0.9rem;
+    color: #1f6b3a;
+    font-weight: 600;
   }
   
   .chat-box,
@@ -454,6 +556,10 @@ body {
   @media (max-width: 900px) {
     .chat-layout {
       grid-template-columns: 1fr;
+    }
+
+    .chat-box-global {
+      max-height: min(50vh, 22rem);
     }
   
     .chat-screen {

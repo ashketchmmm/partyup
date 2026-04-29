@@ -34,10 +34,20 @@
                     </router-link>
                     <router-link v-else :to="{ name: 'home' }" class="header-link"> PartyUp </router-link>
                 </h1>
-                <button v-if="!$graffitiSession.value" @click="$graffiti.login()" class="login">Log In</button>
-                <template v-else>
-                    <button @click="$graffiti.logout($graffitiSession.value)" class="logout">Log Out</button>
-                </template>
+                <nav v-if="showHomeNav" class="header-home-nav" aria-label="Lobby and profile">
+                    <router-link class="header-home-nav-link" :to="{ name: 'home' }">Lobby</router-link>
+                    <router-link class="header-home-nav-link" :to="{ name: 'profile' }">Profile</router-link>
+                </nav>
+                <div class="header-actions">
+                    <button v-if="!$graffitiSession.value" @click="$graffiti.login()" class="login">Log In</button>
+                    <button
+                        v-else-if="$graffitiSession.value"
+                        @click="$graffiti.logout($graffitiSession.value)"
+                        class="logout"
+                    >
+                        Log Out
+                    </button>
+                </div>
             </header>
 
             <main v-if="$graffitiSession.value">
