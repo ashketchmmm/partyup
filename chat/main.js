@@ -11,6 +11,13 @@ import {
   addKnownChat,
   loadAllKnownChats,
 } from "../shared/known-chats.js";
+import {
+  PARTYUP_GAME_OPTIONS,
+  createForChannel,
+  effectiveMaxPlayers,
+  effectiveGame,
+  participantActorSet as buildParticipantActorSet,
+} from "../shared/chat-meta.js";
 import { getMainProfile } from "../shared/main-profile.js";
 import { UserAvatar } from "../components/user-avatar.js";
 
@@ -160,29 +167,30 @@ function chatSetup(props) {
     showProfileMenu.value = !showProfileMenu.value;
   }
 
-  const { objects: chats } = useGraffitiDiscover(
-    () => (session.value ? ["partyup-26"] : []),
-    {
-      properties: {
-        value: {
-          required: ["activity", "type", "channel", "title", "published"],
-          properties: {
-            activity: { const: "Create" },
-            type: { const: "Chat" },
-            channel: { type: "string" },
-            title: { type: "string" },
-            players: { type: "number" },
-            private: { type: "boolean" },
-            published: { type: "number" },
-          },
+  const partyupChatSchema = {
+    properties: {
+      value: {
+        required: ["activity", "type", "channel", "published"],
+        properties: {
+          activity: { enum: ["Create", "Update"] },
+          type: { const: "Chat" },
+          channel: { type: "string" },
+          title: { type: "string" },
+          players: { type: "number" },
+          game: { type: "string" },
+          private: { type: "boolean" },
+          published: { type: "number" },
         },
       },
     },
+  };
+
+  const { objects: chats } = useGraffitiDiscover(
+    () => (session.value ? ["partyup-26"] : []),
+    partyupChatSchema,
   );
 
-  const currentChat = computed(() => {
-    return chats.value.find((chat) => chat.value.channel === channel.value) ?? null;
-  });
+  const currentChat = computed(() => createForChannel(chats.value, channel.value));
 
   const currentChatName = computed(() => {
     return (
@@ -192,13 +200,15 @@ function chatSetup(props) {
     );
   });
 
-  const currentChatPlayers = computed(() => {
-    return (
-      currentChat.value?.value.players ??
-      lookupKnownChatPlayers(session.value, channel.value) ??
-      "Unknown"
-    );
-  });
+  const maxPlayersEffective = computed(() =>
+    channel.value ? effectiveMaxPlayers(chats.value, channel.value) : 1,
+  );
+
+  const currentChatGame = computed(() =>
+    channel.value ? effectiveGame(chats.value, channel.value) : "Other",
+  );
+
+  const currentChatPlayers = computed(() => maxPlayersEffective.value);
 
   function persistKnownChatForCurrentChannel() {
     const ch = channel.value;
@@ -209,6 +219,7 @@ function chatSetup(props) {
       channel: ch,
       title: lookupKnownChatTitle(ses, ch) || "Known Chat",
       players: lookupKnownChatPlayers(ses, ch),
+      game: effectiveGame(chats.value, ch),
     });
   }
 
@@ -233,6 +244,7 @@ function chatSetup(props) {
         channel: channel.value,
         title: String(v.title || "").trim() || "Known Chat",
         players: typeof v.players === "number" ? v.players : null,
+        game: v.game,
       });
     },
   );
@@ -247,8 +259,47 @@ function chatSetup(props) {
     router.push({ name: "home" });
   }
 
+  const settingsGame = ref(PARTYUP_GAME_OPTIONS[0].value);
+  const settingsMaxPlayers = ref(1);
+  const settingsSaveError = ref("");
+
   function openGameOverlay() {
+    settingsSaveError.value = "";
+    const allowedGames = new Set(PARTYUP_GAME_OPTIONS.map((o) => o.value));
+    const g = currentChatGame.value;
+    settingsGame.value = allowedGames.has(g) ? g : "Other";
+    settingsMaxPlayers.value = maxPlayersEffective.value;
     showGameOverlay.value = true;
+  }
+
+  async function saveGameSettings() {
+    if (!session.value || !channel.value || !isChatCreator.value) return;
+    settingsSaveError.value = "";
+    const cap = Math.max(1, Math.floor(Number(settingsMaxPlayers.value)) || 1);
+    if (cap < participantCount.value) {
+      settingsSaveError.value = `Limit must be at least ${participantCount.value} (players already in this chat).`;
+      return;
+    }
+    try {
+      await graffiti.post(
+        {
+          value: {
+            activity: "Update",
+            type: "Chat",
+            channel: channel.value,
+            players: cap,
+            game: settingsGame.value,
+            published: Date.now(),
+          },
+          channels: ["partyup-26"],
+        },
+        session.value,
+      );
+      closeOverlays();
+    } catch (error) {
+      console.error(error);
+      settingsSaveError.value = error?.message || "Could not save settings.";
+    }
   }
 
   function openChatOverlay() {
@@ -282,6 +333,34 @@ function chatSetup(props) {
     undefined,
     true,
   );
+
+  const participantActors = computed(() =>
+    buildParticipantActorSet(currentChat.value, messageObjects.value),
+  );
+
+  const participantCount = computed(() => participantActors.value.size);
+
+  const currentUserIsParticipant = computed(
+    () => Boolean(session.value?.actor && participantActors.value.has(session.value.actor)),
+  );
+
+  const joinBlocked = computed(() => {
+    if (!channel.value || !session.value?.actor) return false;
+    if (!currentChat.value) return false;
+    if (currentUserIsParticipant.value) return false;
+    return participantCount.value >= maxPlayersEffective.value;
+  });
+
+  const isChatCreator = computed(
+    () =>
+      Boolean(
+        session.value?.actor &&
+          currentChat.value?.actor &&
+          session.value.actor === currentChat.value.actor,
+      ),
+  );
+
+  const settingsMinPlayers = computed(() => Math.max(1, participantCount.value));
 
   const sortedMessageObjects = computed(() => {
     return messageObjects.value.toSorted((a, b) => {
@@ -392,6 +471,7 @@ function chatSetup(props) {
 
   async function sendMessage() {
     if (!session.value || !channel.value) return;
+    if (joinBlocked.value) return;
     const draftMessage = myMessage.value.trim();
     if (!draftMessage) return;
     sendError.value = "";
@@ -469,6 +549,16 @@ function chatSetup(props) {
     activeProfile,
     currentChatName,
     currentChatPlayers,
+    currentChatGame,
+    participantCount,
+    joinBlocked,
+    isChatCreator,
+    settingsGame,
+    settingsMaxPlayers,
+    settingsSaveError,
+    saveGameSettings,
+    PARTYUP_GAME_OPTIONS,
+    settingsMinPlayers,
     channel,
     leaveChat,
     showGameOverlay,

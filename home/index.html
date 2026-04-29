@@ -3,6 +3,14 @@
                     <h2>Create Chat</h2>
                     <form @submit.prevent="newChat()" class="stack">
                         <input type="text" v-model="chatTitle" placeholder="Chat Title" />
+                        <label class="stack-label create-chat-game-label">
+                            <span>Game</span>
+                            <select v-model="chatGame" class="create-chat-game-select">
+                                <option v-for="g in PARTYUP_GAME_OPTIONS" :key="g.value" :value="g.value">
+                                    {{ g.label }}
+                                </option>
+                            </select>
+                        </label>
                         <label class="inline-field">
                             <b>Players:</b>
                             <input type="number" min="1" v-model.number="chatPlayers" />
@@ -44,9 +52,19 @@
                     <h2>Global Chats</h2>
                     <ul class="chat-list">
                         <li v-if="!globalChats.length"><em>No global chats yet.</em></li>
-                        <li v-for="chat of globalChats" :key="chat.url">
-                            <button @click="changeChat(chat)" class="chat-link">
+                        <li
+                            v-for="chat of globalChats"
+                            :key="chat.url"
+                            :class="{ 'chat-global-item-full': isGlobalChatFull(chat) }"
+                        >
+                            <button
+                                type="button"
+                                @click="changeChat(chat)"
+                                class="chat-link"
+                                :disabled="isGlobalChatFull(chat)"
+                            >
                                 {{ chat.value.title }}
+                                <small v-if="isGlobalChatFull(chat)" class="chat-global-full-tag"> (full)</small>
                             </button>
                         </li>
                     </ul>

@@ -2,12 +2,30 @@
     <p><em>Invalid chat link. Go back to <router-link to="/home">Create Chat</router-link>.</em></p>
 </section>
 
+<template v-else-if="joinBlocked">
+    <section class="chat-screen chat-full-screen">
+        <article class="chat-box chat-full-card">
+            <h2>Chat is full</h2>
+            <p>
+                This room already has <strong>{{ participantCount }}</strong> /
+                <strong>{{ currentChatPlayers }}</strong> players. Ask the host to raise the limit in
+                Game settings before new players can join.
+            </p>
+            <button type="button" class="leave-chat" @click="leaveChat()">Back to lobby</button>
+        </article>
+    </section>
+</template>
+
 <template v-else>
     <section class="chat-screen">
         <aside class="chat-settings">
             <h2>Chat Settings</h2>
             <p><strong>Name:</strong> {{ currentChatName }}</p>
+            <p><strong>Game:</strong> {{ currentChatGame }}</p>
             <p><strong>Max Players:</strong> {{ currentChatPlayers }}</p>
+            <p class="sidebar-player-count">
+                <small><strong>In room:</strong> {{ participantCount }} player(s)</small>
+            </p>
             <p><strong>Chat ID:</strong> {{ channel }}</p>
             <div class="sidebar-actions">
                 <button type="button" @click="openGameOverlay()" class="sidebar_button">Game</button>
@@ -129,46 +147,53 @@
     </section>
 
     <div v-if="showGameOverlay" class="overlay-backdrop" @click.self="closeOverlays()">
-        <section class="overlay-card">
+        <section class="overlay-card overlay-card-wide">
             <h3>Game Settings</h3>
-            <label>
-                Enable full rulebook for all players
-                <input type="checkbox" />
-            </label>
-
-            <label>
-                Enable summary bot for chat
-                <input type="checkbox" />
-            </label>
-
-            <form>
-                <label for="change_game">Change Game:</label>
-                <select id="change_game" name="change_game">
-                    <option value="D&D">D&amp;D</option>
-                    <option value="Catan">Catan</option>
-                    <option value="BoTC">Blood on the Clocktower</option>
-                    <option value="Pathfinder">Pathfinder</option>
-                    <option value="Other">Other</option>
-                </select>
-                <input type="submit" />
-            </form>
-
-            <button type="button" @click="closeOverlays()">Close</button>
+            <template v-if="isChatCreator">
+                <form class="overlay-stack" @submit.prevent="saveGameSettings()">
+                    <label class="stack-label">
+                        Game
+                        <select v-model="settingsGame" class="overlay-select">
+                            <option v-for="g in PARTYUP_GAME_OPTIONS" :key="g.value" :value="g.value">
+                                {{ g.label }}
+                            </option>
+                        </select>
+                    </label>
+                    <label class="stack-label">
+                        Max players
+                        <input
+                            type="number"
+                            :min="settingsMinPlayers"
+                            v-model.number="settingsMaxPlayers"
+                        />
+                    </label>
+                    <p class="overlay-hint">
+                        Minimum is <strong>{{ settingsMinPlayers }}</strong> (players already in this chat).
+                    </p>
+                    <p v-if="settingsSaveError" class="send-error">{{ settingsSaveError }}</p>
+                    <div class="overlay-actions">
+                        <button type="submit">Save</button>
+                        <button type="button" @click="closeOverlays()">Close</button>
+                    </div>
+                </form>
+            </template>
+            <template v-else>
+                <p class="overlay-readonly-hint">
+                    Only the person who created this chat can change the game or player limit.
+                </p>
+                <p><strong>Game:</strong> {{ currentChatGame }}</p>
+                <p><strong>Max players:</strong> {{ currentChatPlayers }}</p>
+                <button type="button" @click="closeOverlays()">Close</button>
+            </template>
         </section>
     </div>
     <div v-if="showChatOverlay" class="overlay-backdrop" @click.self="closeOverlays()">
         <section class="overlay-card">
-            <h3>Chat Settings</h3>
-            <label>
-                Change number of players:
-                <input type="number" min="1" />
-            </label>
-
-            <form>
+            <h3>Chat tools</h3>
+            <form @submit.prevent>
                 <input type="search" id="search" name="search" placeholder="Search Chat" />
                 <button type="submit">Search</button>
             </form>
-
             <button type="button" @click="closeOverlays()">Close</button>
         </section>
     </div>

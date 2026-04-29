@@ -6,6 +6,7 @@ import {
   getCurrentUserKnownChats,
   addKnownChat as persistKnownChat,
 } from "../shared/known-chats.js";
+import { PARTYUP_GAME_OPTIONS, effectiveMaxPlayers } from "../shared/chat-meta.js";
 
 function setup() {
   const router = useRouter();
@@ -16,6 +17,7 @@ function setup() {
   const chatTitle = ref("");
   const chatPlayers = ref(1);
   const chatPrivacy = ref(false);
+  const chatGame = ref(PARTYUP_GAME_OPTIONS[0].value);
   const knownChatId = ref("");
   const allKnownChats = ref(loadAllKnownChats());
 
@@ -48,27 +50,87 @@ function setup() {
     { immediate: true },
   );
 
-  const { objects: chats } = useGraffitiDiscover(
-    () => (session.value ? ["partyup-26"] : []),
-    {
-      properties: {
-        value: {
-          required: ["activity", "type", "channel", "title", "published"],
-          properties: {
-            activity: { const: "Create" },
-            type: { const: "Chat" },
-            channel: { type: "string" },
-            title: { type: "string" },
-            players: { type: "number" },
-            private: { type: "boolean" },
-            published: { type: "number" },
-          },
+  const partyupChatSchema = {
+    properties: {
+      value: {
+        required: ["activity", "type", "channel", "published"],
+        properties: {
+          activity: { enum: ["Create", "Update"] },
+          type: { const: "Chat" },
+          channel: { type: "string" },
+          title: { type: "string" },
+          players: { type: "number" },
+          game: { type: "string" },
+          private: { type: "boolean" },
+          published: { type: "number" },
         },
       },
     },
+  };
+
+  const { objects: chats } = useGraffitiDiscover(
+    () => (session.value ? ["partyup-26"] : []),
+    partyupChatSchema,
   );
 
-  const globalChats = computed(() => chats.value.filter((chat) => !chat.value.private));
+  const globalChats = computed(() =>
+    chats.value.filter(
+      (chat) => chat.value.activity === "Create" && chat.value.type === "Chat" && !chat.value.private,
+    ),
+  );
+
+  const globalMessageChannels = computed(() =>
+    globalChats.value.map((c) => c.value.channel).filter((id) => Boolean(id && String(id).trim())),
+  );
+
+  const messagePresenceSchema = {
+    properties: {
+      value: {
+        required: ["content", "published"],
+        properties: {
+          content: { type: "string" },
+          published: { type: "number" },
+        },
+      },
+    },
+  };
+
+  const { objects: globalPresenceMessages, poll: pollGlobalPresence } = useGraffitiDiscover(
+    () => (session.value && globalMessageChannels.value.length ? globalMessageChannels.value : []),
+    messagePresenceSchema,
+  );
+
+  watch(
+    globalMessageChannels,
+    () => {
+      void pollGlobalPresence();
+    },
+    { flush: "post" },
+  );
+
+  const globalChatOccupancy = computed(() => {
+    const occ = new Map();
+    for (const chat of globalChats.value) {
+      const cid = chat.value.channel;
+      if (!cid) continue;
+      occ.set(cid, new Set());
+      if (chat.actor) occ.get(cid).add(chat.actor);
+    }
+    for (const m of globalPresenceMessages.value) {
+      const cid = m.channels?.[0];
+      if (!cid || !occ.has(cid)) continue;
+      if (m.actor) occ.get(cid).add(m.actor);
+    }
+    return occ;
+  });
+
+  function isGlobalChatFull(chat) {
+    const cid = chat.value.channel;
+    if (!cid) return false;
+    const max = effectiveMaxPlayers(chats.value, cid);
+    const n = globalChatOccupancy.value.get(cid)?.size ?? 0;
+    return n >= max;
+  }
 
   function goToChat(channel) {
     const id = channel?.trim();
@@ -81,14 +143,16 @@ function setup() {
     const newChannel = crypto.randomUUID();
     isRandomizing.value = true;
     try {
+      const playersCap = Math.max(1, Math.floor(Number(chatPlayers.value)) || 1);
       await graffiti.post(
         {
           value: {
             activity: "Create",
             type: "Chat",
             channel: newChannel,
-            title: chatTitle.value,
-            players: chatPlayers.value,
+            title: chatTitle.value.trim(),
+            players: playersCap,
+            game: chatGame.value,
             private: chatPrivacy.value,
             published: Date.now(),
           },
@@ -98,12 +162,14 @@ function setup() {
       );
       addKnownChat({
         channel: newChannel,
-        title: chatTitle.value,
-        players: chatPlayers.value,
+        title: chatTitle.value.trim(),
+        players: playersCap,
+        game: chatGame.value,
       });
       chatTitle.value = "";
       chatPlayers.value = 1;
       chatPrivacy.value = false;
+      chatGame.value = PARTYUP_GAME_OPTIONS[0].value;
       goToChat(newChannel);
     } finally {
       isRandomizing.value = false;
@@ -111,10 +177,12 @@ function setup() {
   }
 
   function changeChat(chat) {
+    if (isGlobalChatFull(chat)) return;
     addKnownChat({
       channel: chat.value.channel,
       title: chat.value.title,
       players: chat.value.players,
+      game: chat.value.game,
     });
     goToChat(chat.value.channel);
   }
@@ -140,9 +208,12 @@ function setup() {
     chatTitle,
     chatPlayers,
     chatPrivacy,
+    chatGame,
     knownChatId,
     knownChats,
     isRandomizing,
+    PARTYUP_GAME_OPTIONS,
+    isGlobalChatFull,
   };
 }
 

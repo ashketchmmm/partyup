@@ -127,19 +127,27 @@ body {
     width: 10%;
   }
   
-  .login {
-    padding: 1%;
-    border-radius: 5px;
-    background: #a2f5c8;
-    font-weight: 700;
+  /* Match Lobby / Profile pill size (avoid % padding — it shrinks in a narrow flex slot). */
+  .header-actions .login,
+  .header-actions .logout {
+    padding: 0.45rem 0.85rem;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.95rem;
+    line-height: 1.25;
+    box-sizing: border-box;
   }
-  
-  .logout {
-    padding: 1%;
-    border-radius: 5px;
+
+  .header-actions .login {
+    background: #a2f5c8;
+    color: #0f1a56;
+    border: 2px solid rgba(74, 140, 108, 0.75);
+  }
+
+  .header-actions .logout {
     background: #b32b2b;
     color: white;
-    font-weight: 700;
+    border: 2px solid rgba(255, 255, 255, 0.35);
   }
   
   .chat-layout {
@@ -242,6 +250,90 @@ body {
   .stack input[type="number"] {
     width: 25%;
     box-sizing: border-box;
+  }
+
+  .create-chat-game-label {
+    width: 100%;
+    max-width: 18rem;
+  }
+
+  .create-chat-game-select {
+    width: 100%;
+    margin-top: 0.25rem;
+    padding: 0.4rem 0.5rem;
+    border-radius: 8px;
+    border: 1px solid #8fa2d0;
+    box-sizing: border-box;
+  }
+
+  .chat-global-item-full .chat-link,
+  .chat-global-item-full .chat-link:disabled {
+    opacity: 0.55;
+    filter: grayscale(0.2);
+    cursor: not-allowed;
+  }
+
+  .chat-global-full-tag {
+    font-weight: 600;
+    color: #6b5b7a;
+  }
+
+  .chat-full-screen {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: calc(100vh - 120px);
+    padding: 1rem;
+  }
+
+  .chat-full-card {
+    max-width: 28rem;
+    width: 100%;
+  }
+
+  .sidebar-player-count {
+    margin: 0.15rem 0 0.45rem;
+    color: #4d6397;
+  }
+
+  .overlay-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    align-items: stretch;
+    width: 100%;
+  }
+
+  .overlay-select {
+    width: 100%;
+    padding: 0.45rem 0.5rem;
+    border-radius: 8px;
+    border: 1px solid #8fa2d0;
+    box-sizing: border-box;
+  }
+
+  .overlay-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.35rem;
+  }
+
+  .overlay-hint {
+    margin: 0;
+    font-size: 0.88rem;
+    color: #4d6397;
+  }
+
+  .overlay-readonly-hint {
+    margin: 0 0 0.75rem;
+    font-size: 0.92rem;
+    color: #4d6397;
+    line-height: 1.4;
+  }
+
+  .overlay-card-wide {
+    width: min(420px, calc(100% - 2rem));
   }
   
   .inline-field {

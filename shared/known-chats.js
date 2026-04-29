@@ -57,6 +57,9 @@ export function addKnownChat(allKnownChats, session, chatInfo) {
     channel: chatChannel,
     title: chatInfo.title?.trim() || "Known Chat",
     players: typeof chatInfo.players === "number" ? chatInfo.players : null,
+    ...(chatInfo.game != null && String(chatInfo.game).trim()
+      ? { game: String(chatInfo.game).trim() }
+      : {}),
   };
   if (existingIndex >= 0) {
     userKnownChats[existingIndex] = {
