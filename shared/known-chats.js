@@ -43,6 +43,19 @@ export function getCurrentUserKnownChats(allKnownChats, session) {
   return Array.isArray(knownChatsForUser) ? knownChatsForUser : [];
 }
 
+export function removeKnownChat(allKnownChats, session, channelId) {
+  const chatChannel = typeof channelId === "string" ? channelId.trim() : "";
+  if (!chatChannel) return;
+  const ownerKey = getKnownChatsOwnerKey(session);
+  if (!ownerKey || !Array.isArray(allKnownChats[ownerKey])) return;
+  const userKnownChats = allKnownChats[ownerKey];
+  const idx = userKnownChats.findIndex((chat) => chat.channel === chatChannel);
+  if (idx >= 0) {
+    userKnownChats.splice(idx, 1);
+    saveAllKnownChats(allKnownChats);
+  }
+}
+
 export function addKnownChat(allKnownChats, session, chatInfo) {
   const chatChannel = chatInfo.channel?.trim();
   if (!chatChannel) return;

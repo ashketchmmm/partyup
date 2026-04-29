@@ -1,4 +1,4 @@
-import { ref, computed, watch, toRef } from "vue";
+import { ref, computed, watch, toRef, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 import {
   useGraffiti,
@@ -10,15 +10,20 @@ import {
   lookupKnownChatPlayers,
   addKnownChat,
   loadAllKnownChats,
+  removeKnownChat,
 } from "../shared/known-chats.js";
 import {
   PARTYUP_GAME_OPTIONS,
+  PARTYUP_MAX_PLAYERS,
+  clampPlayerCap,
   createForChannel,
   effectiveMaxPlayers,
   effectiveGame,
+  listChatUpdates,
   participantActorSet as buildParticipantActorSet,
 } from "../shared/chat-meta.js";
 import { getMainProfile } from "../shared/main-profile.js";
+import { headerChatLivePlayers } from "../shared/header-chat-live.js";
 import { UserAvatar } from "../components/user-avatar.js";
 
 const profilesStorageKey = "partyup-chat-profiles";
@@ -38,6 +43,10 @@ function chatSetup(props) {
   const newProfileAvatar = ref("");
   const privateMessageTarget = ref(null);
   const sendError = ref("");
+  const suppressKnownChatPersist = ref(false);
+  const deleteChatError = ref("");
+  const forgetChatError = ref("");
+  const isDeletingChat = ref(false);
 
   const channel = computed(() => (chatIdRef.value || "").trim());
 
@@ -103,6 +112,7 @@ function chatSetup(props) {
   watch(
     channel,
     (id) => {
+      suppressKnownChatPersist.value = false;
       if (id) ensureChatProfiles(id);
     },
     { immediate: true },
@@ -211,6 +221,7 @@ function chatSetup(props) {
   const currentChatPlayers = computed(() => maxPlayersEffective.value);
 
   function persistKnownChatForCurrentChannel() {
+    if (suppressKnownChatPersist.value) return;
     const ch = channel.value;
     const ses = session.value;
     if (!ch || !ses?.actor) return;
@@ -259,6 +270,84 @@ function chatSetup(props) {
     router.push({ name: "home" });
   }
 
+  function removeProfilesForChannel(channelId) {
+    if (!channelId) return;
+    const ownerKey = getProfileOwnerKey();
+    const userProfiles = allUserProfiles.value[ownerKey];
+    if (userProfiles && Object.prototype.hasOwnProperty.call(userProfiles, channelId)) {
+      delete userProfiles[channelId];
+      saveAllUserProfiles();
+    }
+  }
+
+  function forgetChatPermanently() {
+    if (!session.value?.actor || !channel.value) return;
+    forgetChatError.value = "";
+    if (
+      !confirm(
+        "Remove this chat from your Known Chats? You can open it again from Global Chats if it is public, or by pasting the chat ID.",
+      )
+    ) {
+      return;
+    }
+    try {
+      const ch = channel.value;
+      suppressKnownChatPersist.value = true;
+      removeKnownChat(loadAllKnownChats(), session.value, ch);
+      removeProfilesForChannel(ch);
+      if (headerChatLivePlayers.value?.channel === ch) {
+        headerChatLivePlayers.value = null;
+      }
+      leaveChat();
+    } catch (e) {
+      console.error(e);
+      forgetChatError.value = e?.message || "Could not update saved chats.";
+      suppressKnownChatPersist.value = false;
+    }
+  }
+
+  async function deleteChatAsOwner() {
+    if (!session.value?.actor || !channel.value || !isChatCreator.value) return;
+    const createObj = currentChat.value;
+    if (!createObj) {
+      deleteChatError.value = "Chat data is still loading. Try again in a moment.";
+      return;
+    }
+    deleteChatError.value = "";
+    if (
+      !confirm(
+        "Delete this chat for everyone? The room will disappear from Global Chats. Messages may still exist for people who have the link, but the room cannot be managed here anymore.",
+      )
+    ) {
+      return;
+    }
+    isDeletingChat.value = true;
+    try {
+      const ch = channel.value;
+      const actor = session.value.actor;
+      const updates = listChatUpdates(chats.value).filter(
+        (o) => o.value?.channel === ch && o.actor === actor,
+      );
+      for (const u of updates) {
+        await graffiti.delete(u, session.value);
+      }
+      await graffiti.delete(createObj, session.value);
+      suppressKnownChatPersist.value = true;
+      removeKnownChat(loadAllKnownChats(), session.value, ch);
+      removeProfilesForChannel(ch);
+      if (headerChatLivePlayers.value?.channel === ch) {
+        headerChatLivePlayers.value = null;
+      }
+      closeOverlays();
+      leaveChat();
+    } catch (e) {
+      console.error(e);
+      deleteChatError.value = e?.message || "Could not delete this chat.";
+    } finally {
+      isDeletingChat.value = false;
+    }
+  }
+
   const settingsGame = ref(PARTYUP_GAME_OPTIONS[0].value);
   const settingsMaxPlayers = ref(1);
   const settingsSaveError = ref("");
@@ -275,7 +364,7 @@ function chatSetup(props) {
   async function saveGameSettings() {
     if (!session.value || !channel.value || !isChatCreator.value) return;
     settingsSaveError.value = "";
-    const cap = Math.max(1, Math.floor(Number(settingsMaxPlayers.value)) || 1);
+    const cap = clampPlayerCap(settingsMaxPlayers.value);
     if (cap < participantCount.value) {
       settingsSaveError.value = `Limit must be at least ${participantCount.value} (players already in this chat).`;
       return;
@@ -339,6 +428,29 @@ function chatSetup(props) {
   );
 
   const participantCount = computed(() => participantActors.value.size);
+
+  watch(
+    [channel, participantCount, currentChatName],
+    () => {
+      const ch = channel.value;
+      if (!ch) {
+        headerChatLivePlayers.value = null;
+        return;
+      }
+      headerChatLivePlayers.value = {
+        channel: ch,
+        inRoom: participantCount.value,
+        title: currentChatName.value,
+      };
+    },
+    { immediate: true },
+  );
+
+  onUnmounted(() => {
+    if (headerChatLivePlayers.value?.channel === channel.value) {
+      headerChatLivePlayers.value = null;
+    }
+  });
 
   const currentUserIsParticipant = computed(
     () => Boolean(session.value?.actor && participantActors.value.has(session.value.actor)),
@@ -528,6 +640,38 @@ function chatSetup(props) {
 
   const isDeleting = ref(new Set());
 
+  const copyChatIdStatus = ref("");
+
+  async function copyChatId() {
+    const id = channel.value;
+    if (!id) return;
+    copyChatIdStatus.value = "";
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(id);
+      } else {
+        const ta = document.createElement("textarea");
+        ta.value = id;
+        ta.setAttribute("readonly", "");
+        ta.style.position = "fixed";
+        ta.style.left = "-9999px";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      }
+      copyChatIdStatus.value = "Copied";
+      window.setTimeout(() => {
+        if (copyChatIdStatus.value === "Copied") copyChatIdStatus.value = "";
+      }, 2000);
+    } catch {
+      copyChatIdStatus.value = "Copy failed";
+      window.setTimeout(() => {
+        if (copyChatIdStatus.value === "Copy failed") copyChatIdStatus.value = "";
+      }, 2500);
+    }
+  }
+
   async function deleteMessage(message) {
     isDeleting.value.add(message.url);
     try {
@@ -558,6 +702,7 @@ function chatSetup(props) {
     settingsSaveError,
     saveGameSettings,
     PARTYUP_GAME_OPTIONS,
+    PARTYUP_MAX_PLAYERS,
     settingsMinPlayers,
     channel,
     leaveChat,
@@ -581,6 +726,13 @@ function chatSetup(props) {
     selectProfile,
     createProfile,
     removeProfile,
+    copyChatId,
+    copyChatIdStatus,
+    forgetChatPermanently,
+    deleteChatAsOwner,
+    deleteChatError,
+    forgetChatError,
+    isDeletingChat,
   };
 }
 

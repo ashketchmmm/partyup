@@ -13,7 +13,12 @@
                         </label>
                         <label class="inline-field">
                             <b>Players:</b>
-                            <input type="number" min="1" v-model.number="chatPlayers" />
+                            <input
+                                type="number"
+                                min="1"
+                                :max="PARTYUP_MAX_PLAYERS"
+                                v-model.number="chatPlayers"
+                            />
                         </label>
                         <label class="inline-field">
                             <b>Private:</b>

@@ -6,7 +6,12 @@ import {
   getCurrentUserKnownChats,
   addKnownChat as persistKnownChat,
 } from "../shared/known-chats.js";
-import { PARTYUP_GAME_OPTIONS, effectiveMaxPlayers } from "../shared/chat-meta.js";
+import {
+  PARTYUP_GAME_OPTIONS,
+  PARTYUP_MAX_PLAYERS,
+  effectiveMaxPlayers,
+  clampPlayerCap,
+} from "../shared/chat-meta.js";
 
 function setup() {
   const router = useRouter();
@@ -143,7 +148,7 @@ function setup() {
     const newChannel = crypto.randomUUID();
     isRandomizing.value = true;
     try {
-      const playersCap = Math.max(1, Math.floor(Number(chatPlayers.value)) || 1);
+      const playersCap = clampPlayerCap(chatPlayers.value);
       await graffiti.post(
         {
           value: {
@@ -213,6 +218,7 @@ function setup() {
     knownChats,
     isRandomizing,
     PARTYUP_GAME_OPTIONS,
+    PARTYUP_MAX_PLAYERS,
     isGlobalChatFull,
   };
 }

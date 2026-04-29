@@ -1,3 +1,12 @@
+/** Hard cap for max players on create, settings, and join logic. */
+export const PARTYUP_MAX_PLAYERS = 100;
+
+export function clampPlayerCap(raw) {
+  const n = Math.floor(Number(raw));
+  if (!Number.isFinite(n) || n < 1) return 1;
+  return Math.min(PARTYUP_MAX_PLAYERS, n);
+}
+
 /** Match Game Settings / Create Chat dropdown values. */
 export const PARTYUP_GAME_OPTIONS = [
   { value: "D&D", label: "D&D" },
@@ -37,9 +46,9 @@ export function effectiveMaxPlayers(objects, channelId) {
   const fromCreate = Math.max(1, Math.floor(Number(create?.value?.players)) || 1);
   const fromUpdate = latest?.value?.players;
   if (typeof fromUpdate === "number" && Number.isFinite(fromUpdate)) {
-    return Math.max(1, Math.floor(fromUpdate));
+    return clampPlayerCap(Math.max(1, Math.floor(fromUpdate)));
   }
-  return fromCreate;
+  return clampPlayerCap(fromCreate);
 }
 
 export function effectiveGame(objects, channelId) {
