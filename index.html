@@ -29,8 +29,12 @@
         <template id="template">
             <header>
                 <h1 class="header_h1">
-                    <router-link v-if="isChatRoute" :to="{ name: 'home' }" class="header-link">
-                        {{ headerTitle }}
+                    <router-link v-if="isChatRoute" :to="{ name: 'home' }" class="header-link header-chat-title">
+                        {{ displayedChatTitle }}<span
+                            v-show="displayedChatTitle !== headerTitle"
+                            class="header-chat-caret"
+                            aria-hidden="true"
+                        ></span>
                     </router-link>
                     <router-link v-else :to="{ name: 'home' }" class="header-link"> PartyUp </router-link>
                 </h1>
@@ -49,6 +53,7 @@
                     >
                         Profile
                     </router-link>
+                    
                 </nav>
                 <div class="header-actions">
                     <button v-if="!$graffitiSession.value" @click="$graffiti.login()" class="login">Log In</button>

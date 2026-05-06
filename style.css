@@ -101,6 +101,36 @@ html {
     text-decoration: none;
   }
 
+  .header-chat-title {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0;
+    vertical-align: bottom;
+  }
+
+  .header-chat-caret {
+    display: inline-block;
+    width: 0.075em;
+    height: 0.95em;
+    margin-left: 0.06em;
+    background: linear-gradient(to bottom, #d5e6ff, #7eb0ea);
+    border-radius: 1px;
+    animation: header-chat-caret-blink 0.5s step-end infinite;
+  }
+
+  @keyframes header-chat-caret-blink {
+    50% {
+      opacity: 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .header-chat-caret {
+      animation: none;
+      opacity: 0;
+    }
+  }
+
   /* Do not use filter here: it breaks parent background-clip text and makes the title vanish. */
   .header_h1 .header-link:hover {
     text-decoration: underline;
@@ -664,12 +694,12 @@ html {
     border: 1px solid #8fa2d0;
   }
   
-  .message-composer input[type="submit"] {
+  .message-composer .send-submit {
+    position: relative;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     flex: 0.1;
-    /* height: 80%; */
     border-radius: 10px;
     border: 1px solid #8fa2d0;
     background-color: #0f1a56;
@@ -677,6 +707,65 @@ html {
     font-weight: 600;
     text-align: center;
     padding: 1%;
+    cursor: pointer;
+    overflow: hidden;
+    min-height: 2.25rem;
+  }
+
+  .message-composer .send-submit:disabled {
+    cursor: not-allowed;
+    opacity: 0.85;
+  }
+
+  .message-composer .send-submit-fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 0;
+    background: linear-gradient(90deg, #3d5a9e, #8eb4f2);
+    transition: none;
+    pointer-events: none;
+  }
+
+  .message-composer .send-submit.is-sending .send-submit-fill {
+    width: 100%;
+    transition: width 0.45s cubic-bezier(0.33, 1, 0.68, 1);
+  }
+
+  .message-composer .send-submit-label {
+    position: relative;
+    z-index: 1;
+    display: inline-block;
+  }
+
+  .message-composer .send-submit-label.is-shaking {
+    animation: send-label-shake 0.32s ease-in-out;
+  }
+
+  @keyframes send-label-shake {
+    0%,
+    100% {
+      transform: translateX(0);
+    }
+    20% {
+      transform: translateX(-5px);
+    }
+    40% {
+      transform: translateX(5px);
+    }
+    60% {
+      transform: translateX(-5px);
+    }
+    80% {
+      transform: translateX(5px);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .message-composer .send-submit-label.is-shaking {
+      animation: none;
+    }
   }
   
   .pm-draft-indicator {
@@ -826,6 +915,78 @@ html {
     border-radius: 10px;
     box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
     padding: 1rem;
+  }
+
+  .warning-pop-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(8, 14, 30, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1100;
+    animation: warning-pop-backdrop-in 0.16s ease-out;
+  }
+
+  .warning-pop-card {
+    width: min(430px, calc(100% - 2rem));
+    background: #f2f5ff;
+    border: 1px solid #8fa2d0;
+    border-left: 4px solid #8b2942;
+    border-radius: 10px;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.24);
+    padding: 1rem;
+    animation: warning-pop-card-in 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .warning-pop-card h3 {
+    margin: 0 0 0.5rem;
+  }
+
+  .warning-pop-card p {
+    margin: 0;
+    color: #2a3860;
+  }
+
+  .warning-pop-actions {
+    margin-top: 0.8rem;
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+  }
+
+  .warning-pop-proceed {
+    background: #8b2942;
+    color: #fff;
+    border-color: #5c1a2c;
+    font-weight: 600;
+  }
+
+  @keyframes warning-pop-backdrop-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes warning-pop-card-in {
+    0% {
+      opacity: 0;
+      transform: translateY(8px) scale(0.97);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .warning-pop-backdrop,
+    .warning-pop-card {
+      animation: none;
+    }
   }
   
   @media (max-width: 900px) {

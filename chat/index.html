@@ -118,7 +118,7 @@
                 </ul>
             </div>
 
-            <form @submit.prevent="sendMessage()" class="message-composer">
+            <form @submit.prevent="attemptSendMessage()" class="message-composer">
                 <div class="profile-menu-anchor">
                     <button type="button" class="profile-toggle" @click="toggleProfileMenu()">
                         <UserAvatar
@@ -164,11 +164,17 @@
                     @input="handleMessageInput()"
                     placeholder="Message"
                 />
-                <input
+                <button
                     type="submit"
-                    :value="isSending ? 'Sending...' : 'Send'"
-                    :disabled="!myMessage || isSending"
-                />
+                    class="send-submit"
+                    :class="{ 'is-sending': isSending }"
+                    :disabled="isSending"
+                >
+                    <span class="send-submit-fill" aria-hidden="true"></span>
+                    <span class="send-submit-label" :class="{ 'is-shaking': isSendLabelShaking }">{{
+                        isSending ? 'Sending...' : 'Send'
+                    }}</span>
+                </button>
             </form>
             <p v-if="privateMessageTarget" class="pm-draft-indicator">
                 Sending privately to <strong>{{ privateMessageTarget.name }}</strong>. Remove
@@ -185,7 +191,7 @@
                 <form class="overlay-stack" @submit.prevent="saveGameSettings()">
                     <label class="stack-label">
                         Game
-                        <select v-model="settingsGame" class="overlay-select">
+                        <select :value="settingsGame" class="overlay-select" @change="onSettingsGameSelection">
                             <option v-for="g in PARTYUP_GAME_OPTIONS" :key="g.value" :value="g.value">
                                 {{ g.label }}
                             </option>
@@ -219,6 +225,18 @@
                 <p><strong>Max players:</strong> {{ currentChatPlayers }}</p>
                 <button type="button" @click="closeOverlays()">Close</button>
             </template>
+        </section>
+    </div>
+    <div v-if="showGameChangeWarning" class="warning-pop-backdrop" @click.self="cancelGameSelectionChange()">
+        <section class="warning-pop-card" role="dialog" aria-modal="true" aria-label="Game change warning">
+            <h3>Warning</h3>
+            <p>Changing the game can cause irreversible changes to the chat. Proceed?</p>
+            <div class="warning-pop-actions">
+                <button type="button" @click="cancelGameSelectionChange()">Cancel</button>
+                <button type="button" class="warning-pop-proceed" @click="confirmGameSelectionChange()">
+                    Proceed
+                </button>
+            </div>
         </section>
     </div>
     <div v-if="showChatOverlay" class="overlay-backdrop" @click.self="closeOverlays()">

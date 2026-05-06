@@ -351,6 +351,8 @@ function chatSetup(props) {
   const settingsGame = ref(PARTYUP_GAME_OPTIONS[0].value);
   const settingsMaxPlayers = ref(1);
   const settingsSaveError = ref("");
+  const showGameChangeWarning = ref(false);
+  const pendingGameChoice = ref(null);
 
   function openGameOverlay() {
     settingsSaveError.value = "";
@@ -358,7 +360,28 @@ function chatSetup(props) {
     const g = currentChatGame.value;
     settingsGame.value = allowedGames.has(g) ? g : "Other";
     settingsMaxPlayers.value = maxPlayersEffective.value;
+    pendingGameChoice.value = null;
+    showGameChangeWarning.value = false;
     showGameOverlay.value = true;
+  }
+
+  function onSettingsGameSelection(event) {
+    const nextGame = String(event?.target?.value || "");
+    if (!nextGame || nextGame === settingsGame.value) return;
+    pendingGameChoice.value = nextGame;
+    showGameChangeWarning.value = true;
+    if (event?.target) event.target.value = settingsGame.value;
+  }
+
+  function confirmGameSelectionChange() {
+    if (pendingGameChoice.value) settingsGame.value = pendingGameChoice.value;
+    pendingGameChoice.value = null;
+    showGameChangeWarning.value = false;
+  }
+
+  function cancelGameSelectionChange() {
+    pendingGameChoice.value = null;
+    showGameChangeWarning.value = false;
   }
 
   async function saveGameSettings() {
@@ -398,6 +421,8 @@ function chatSetup(props) {
   function closeOverlays() {
     showGameOverlay.value = false;
     showChatOverlay.value = false;
+    pendingGameChoice.value = null;
+    showGameChangeWarning.value = false;
   }
 
   function togglePlayersDropdown() {
@@ -449,6 +474,10 @@ function chatSetup(props) {
   onUnmounted(() => {
     if (headerChatLivePlayers.value?.channel === channel.value) {
       headerChatLivePlayers.value = null;
+    }
+    if (sendShakeTimer !== null && typeof window !== "undefined") {
+      window.clearTimeout(sendShakeTimer);
+      sendShakeTimer = null;
     }
   });
 
@@ -580,6 +609,33 @@ function chatSetup(props) {
   }
 
   const isSending = ref(false);
+  const isSendLabelShaking = ref(false);
+  let sendShakeTimer = null;
+
+  function triggerEmptySendShake() {
+    if (typeof window === "undefined") return;
+    if (sendShakeTimer !== null) {
+      window.clearTimeout(sendShakeTimer);
+      sendShakeTimer = null;
+    }
+    isSendLabelShaking.value = false;
+    window.requestAnimationFrame(() => {
+      isSendLabelShaking.value = true;
+      sendShakeTimer = window.setTimeout(() => {
+        isSendLabelShaking.value = false;
+        sendShakeTimer = null;
+      }, 340);
+    });
+  }
+
+  function attemptSendMessage() {
+    if (isSending.value) return;
+    if (!myMessage.value.trim()) {
+      triggerEmptySendShake();
+      return;
+    }
+    void sendMessage();
+  }
 
   async function sendMessage() {
     if (!session.value || !channel.value) return;
@@ -686,6 +742,8 @@ function chatSetup(props) {
     areMessageObjectsLoading,
     visibleMessageObjects,
     isSending,
+    isSendLabelShaking,
+    attemptSendMessage,
     sendMessage,
     isDeleting,
     deleteMessage,
@@ -700,7 +758,11 @@ function chatSetup(props) {
     settingsGame,
     settingsMaxPlayers,
     settingsSaveError,
+    showGameChangeWarning,
     saveGameSettings,
+    onSettingsGameSelection,
+    confirmGameSelectionChange,
+    cancelGameSelectionChange,
     PARTYUP_GAME_OPTIONS,
     PARTYUP_MAX_PLAYERS,
     settingsMinPlayers,
