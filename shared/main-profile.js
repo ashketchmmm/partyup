@@ -26,7 +26,7 @@ export function getMainProfile(session) {
 export function saveMainProfile(session, { name, avatar }) {
   const all = loadAllMainProfiles();
   all[ownerKey(session)] = {
-    name: name?.trim() || "Me",
+    name: name?.trim() || "Name",
     avatar: avatar?.trim() || "",
     updated: Date.now(),
   };
