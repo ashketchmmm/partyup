@@ -730,6 +730,16 @@ html {
     padding: 3%;
     font-weight: 600;
   }
+
+.chat-item-owned .chat-link {
+  background-color: #dde3fc;
+  border-color: #2f4984;
+}
+
+.chat-owner-tag {
+  font-weight: 600;
+  color: #2f4984;
+}
   
   .current-chat {
     margin-top: 0.75rem;

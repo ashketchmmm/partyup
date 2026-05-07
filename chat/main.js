@@ -577,7 +577,7 @@ function chatSetup(props) {
     forgetChatError.value = "";
     if (
       !confirm(
-        "Remove this chat from your Known Chats? You can open it again from Global Chats if it is public, or with an invite link.",
+        "Remove this chat from your Joined Chats? You can open it again from Public Chats, or with an invite link.",
       )
     ) {
       return;

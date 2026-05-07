@@ -20,9 +20,9 @@
                 </p>
             </template>
             <div class="join-blocked-actions">
-                <button type="button" class="leave-chat" @click="leaveChat()">Back to lobby</button>
+                <button type="button" class="leave-chat" @click="leaveChat()">Back to Lobby</button>
                 <button type="button" class="sidebar-forget-chat" @click="forgetChatPermanently()">
-                    Remove from Known Chats
+                    Remove from Joined Chats
                 </button>
             </div>
             <p v-if="forgetChatError" class="send-error join-blocked-error">{{ forgetChatError }}</p>

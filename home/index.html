@@ -8,9 +8,16 @@
                     </div>
                     <ul class="chat-list">
                         <li v-if="!knownChats.length"><em>No known chats yet.</em></li>
-                        <li v-for="chat of knownChats" :key="chat.channel">
+                        <li
+                            v-for="chat of knownChats"
+                            :key="chat.channel"
+                            :class="{ 'chat-item-owned': isOwnedChatChannel(chat.channel) }"
+                        >
                             <button @click="openKnownChat(chat)" class="chat-link">
                                 {{ chat.title }}
+                                <small v-if="isOwnedChatChannel(chat.channel)" class="chat-owner-tag">
+                                    (Owner)
+                                </small>
                             </button>
                         </li>
                     </ul>
@@ -23,7 +30,10 @@
                         <li
                             v-for="chat of globalChats"
                             :key="chat.url"
-                            :class="{ 'chat-global-item-full': isGlobalChatFull(chat) }"
+                            :class="{
+                                'chat-global-item-full': isGlobalChatFull(chat),
+                                'chat-item-owned': isOwnedGlobalChat(chat),
+                            }"
                         >
                             <button
                                 type="button"
@@ -31,7 +41,8 @@
                                 class="chat-link"
                                 :disabled="isGlobalChatFull(chat)"
                             >
-                                {{ chat.value.title }}
+                                {{ globalChatDisplayTitle(chat) }}
+                                <small v-if="isOwnedGlobalChat(chat)" class="chat-owner-tag"> (Owner)</small>
                                 <small v-if="isGlobalChatFull(chat)" class="chat-global-full-tag"> (full)</small>
                             </button>
                         </li>

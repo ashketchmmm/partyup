@@ -10,6 +10,7 @@ import {
   PARTYUP_GAME_OPTIONS,
   PARTYUP_MAX_PLAYERS,
   effectiveMaxPlayers,
+  effectiveChatTitle,
   clampPlayerCap,
 } from "../shared/chat-meta.js";
 import { extractChatIdFromInviteInput } from "../shared/chat-invite.js";
@@ -120,6 +121,17 @@ function setup() {
     ),
   );
 
+  const chatCreateByChannel = computed(() => {
+    const byChannel = new Map();
+    for (const chat of chats.value) {
+      if (chat.value?.activity !== "Create" || chat.value?.type !== "Chat") continue;
+      const cid = String(chat.value.channel || "").trim();
+      if (!cid) continue;
+      byChannel.set(cid, chat);
+    }
+    return byChannel;
+  });
+
   const globalMessageChannels = computed(() =>
     globalChats.value.map((c) => c.value.channel).filter((id) => Boolean(id && String(id).trim())),
   );
@@ -171,6 +183,23 @@ function setup() {
     const max = effectiveMaxPlayers(chats.value, cid);
     const n = globalChatOccupancy.value.get(cid)?.size ?? 0;
     return n >= max;
+  }
+
+  function globalChatDisplayTitle(chat) {
+    const cid = String(chat?.value?.channel || "").trim();
+    if (!cid) return String(chat?.value?.title || "").trim() || "Chat";
+    return effectiveChatTitle(chats.value, cid) || String(chat?.value?.title || "").trim() || "Chat";
+  }
+
+  function isOwnedChatChannel(channel) {
+    const cid = String(channel || "").trim();
+    const me = session.value?.actor;
+    if (!cid || !me) return false;
+    return chatCreateByChannel.value.get(cid)?.actor === me;
+  }
+
+  function isOwnedGlobalChat(chat) {
+    return isOwnedChatChannel(chat?.value?.channel);
   }
 
   function goToChat(channel) {
@@ -281,6 +310,9 @@ function setup() {
     PARTYUP_GAME_OPTIONS,
     PARTYUP_MAX_PLAYERS,
     isGlobalChatFull,
+    globalChatDisplayTitle,
+    isOwnedChatChannel,
+    isOwnedGlobalChat,
   };
 }
 
