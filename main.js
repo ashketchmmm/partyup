@@ -4,6 +4,8 @@ import { GraffitiDecentralized } from "@graffiti-garden/implementation-decentral
 import { GraffitiPlugin, useGraffitiSession } from "@graffiti-garden/wrapper-vue";
 import { lookupKnownChatTitle } from "./shared/known-chats.js";
 import { headerChatLivePlayers } from "./shared/header-chat-live.js";
+import { chatDisplayPrefs } from "./shared/chat-display-prefs.js";
+import { PARTYUP_SCROLL_CHAT_TOP_EVENT } from "./shared/chat-ui-events.js";
 
 function loadComponent(name) {
   return () => import(`./${name}/main.js`).then((m) => m.default());
@@ -24,6 +26,10 @@ const router = createRouter({
       ],
     },
     { path: "/profile", redirect: "/home/profile" },
+    {
+      path: "/join/:chatId",
+      redirect: (to) => ({ name: "chat", params: { chatId: to.params.chatId } }),
+    },
     { path: "/chat/:chatId", name: "chat", component: loadComponent("chat"), props: true },
   ],
 });
@@ -48,6 +54,8 @@ const app = createApp({
       const storedTitle = lookupKnownChatTitle(session.value, sid);
       const label =
         live?.channel === sid && live.title ? live.title : (storedTitle || "Chat");
+      const prefs = chatDisplayPrefs.value;
+      if (!prefs.showPlayersOnline) return label;
       const players = live?.channel === sid ? live.inRoom : null;
       return `${label} | Players Online: ${players ?? "?"}`;
     });
@@ -125,7 +133,13 @@ const app = createApp({
       clearTypingTimer();
     });
 
-    return { isChatRoute, showHomeNav, headerTitle, displayedChatTitle };
+    function onChatTitleClick() {
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent(PARTYUP_SCROLL_CHAT_TOP_EVENT));
+      }
+    }
+
+    return { isChatRoute, showHomeNav, headerTitle, displayedChatTitle, onChatTitleClick };
   },
 });
 

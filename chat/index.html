@@ -5,12 +5,20 @@
 <template v-else-if="joinBlocked">
     <section class="chat-screen chat-full-screen">
         <article class="chat-box chat-full-card">
-            <h2>Chat is full</h2>
-            <p>
-                This room already has <strong>{{ participantCount }}</strong> /
-                <strong>{{ currentChatPlayers }}</strong> players. Ask the host to raise the limit in
-                Game settings before new players can join.
-            </p>
+            <template v-if="joinBlockedKind === 'banned'">
+                <h2>Banned from Chat</h2>
+                <p>
+                    You cannot join this chat while you are on the host’s ban list for this room.
+                </p>
+            </template>
+            <template v-else>
+                <h2>Chat is Full</h2>
+                <p>
+                    This room already has <strong>{{ participantCount }}</strong> /
+                    <strong>{{ currentChatPlayers }}</strong> players. Ask the host to raise the limit in the chat
+                    settings before new players can join.
+                </p>
+            </template>
             <div class="join-blocked-actions">
                 <button type="button" class="leave-chat" @click="leaveChat()">Back to lobby</button>
                 <button type="button" class="sidebar-forget-chat" @click="forgetChatPermanently()">
@@ -24,30 +32,122 @@
 
 <template v-else>
     <section class="chat-screen">
-        <aside class="chat-settings">
-            <h2>Chat Settings</h2>
-            <p><strong>Name:</strong> {{ currentChatName }}</p>
-            <p><strong>Game:</strong> {{ currentChatGame }}</p>
-            <p><strong>Max Players:</strong> {{ currentChatPlayers }}</p>
-            <p class="sidebar-chat-id-row">
-                <strong>Chat ID:</strong>
-                <code class="sidebar-chat-id">{{ channel }}</code>
-                <button type="button" class="sidebar-copy-id" @click="copyChatId()">Copy</button>
+        <button
+            v-if="chatLayoutNarrow"
+            type="button"
+            class="chat-settings-mobile-toggle"
+            :aria-expanded="chatSettingsExpanded"
+            @click="chatSettingsExpanded = !chatSettingsExpanded"
+        >
+            <span class="chat-settings-mobile-toggle-text">
+                <span class="chat-settings-mobile-toggle-title">Chat Info</span>
+                <span v-if="chatDisplayPrefs.showGame" class="chat-settings-mobile-toggle-game">{{
+                    currentChatGame
+                }}</span>
+            </span>
+            <span class="chat-settings-mobile-toggle-chevron" aria-hidden="true">{{
+                chatSettingsExpanded ? '▼' : '▶'
+            }}</span>
+        </button>
+        <aside v-if="!chatLayoutNarrow || chatSettingsExpanded" class="chat-settings">
+            <h2 v-if="chatDisplayPrefs.showGame">Game: {{ currentChatGame }}</h2>
+            <p v-if="chatDisplayPrefs.showMaxPlayers"><strong>Max Players:</strong> {{ currentChatPlayers }}</p>
+            <div v-if="isChatCreator || !inviteLockedEffective" class="sidebar-invite-block">
+                <button type="button" class="sidebar-copy-id sidebar-invite-btn" @click="copyInviteLink()">
+                    Copy invite link
+                </button>
+                <p v-if="copyChatIdStatus" class="sidebar-copy-id-status">{{ copyChatIdStatus }}</p>
+            </div>
+            <p v-else class="sidebar-hint-small sidebar-invite-locked-hint">
+                The host has locked the invite link. Ask them for access if you need to invite someone.
             </p>
-            <p v-if="copyChatIdStatus" class="sidebar-copy-id-status">{{ copyChatIdStatus }}</p>
             <div class="sidebar-actions">
-                <button type="button" @click="openGameOverlay()" class="sidebar_button">Game</button>
-                <button type="button" @click="openChatOverlay()" class="sidebar_button">Chat</button>
-                <button type="button" @click="togglePlayersDropdown()" class="sidebar_button">Players</button>
+                <button
+                    v-if="isChatCreator"
+                    type="button"
+                    @click="openGameOverlay()"
+                    class="sidebar_button"
+                >
+                    Chat ⚙️
+                </button>
+                <button type="button" @click="openChatOverlay()" class="sidebar_button">General 📜</button>
+                <button type="button" @click="togglePlayersDropdown()" class="sidebar_button">See Players</button>
             </div>
             <div v-if="showPlayersDropdown" class="players-dropdown">
-                <p><strong>Other players</strong></p>
-                <ul>
+                <p><strong>Players</strong></p>
+                <ul class="players-dropdown-list">
                     <li v-if="!otherUsersInChat.length"><em>No other users found yet.</em></li>
-                    <li v-for="user of otherUsersInChat" :key="user.actor">
-                        <button type="button" @click="onPlayerClick(user)">{{ user.name }}</button>
+                    <li v-for="user of otherUsersInChat" :key="user.actor" class="players-dropdown-item">
+                        <button
+                            type="button"
+                            class="players-dropdown-name"
+                            :class="{ 'players-dropdown-name--recent': user.isRecent }"
+                            :title="
+                                user.isRecent
+                                    ? 'Posted recently — likely still in or near this chat'
+                                    : undefined
+                            "
+                            @click="onPlayerClick(user)"
+                        >
+                            {{ user.name }}
+                        </button>
+                        <span v-if="isChatCreator" class="players-dropdown-moderation">
+                            <button
+                                type="button"
+                                class="players-dropdown-kick"
+                                :disabled="moderationBusyActor === user.actor"
+                                @click.stop="kickPlayer(user.actor)"
+                            >
+                                {{
+                                    moderationBusyActor === user.actor && moderationBusyKind === 'kick'
+                                        ? 'Kicking…'
+                                        : 'Kick'
+                                }}
+                            </button>
+                            <button
+                                type="button"
+                                class="players-dropdown-ban"
+                                :disabled="
+                                    moderationBusyActor === user.actor ||
+                                    bannedActorsEffective.includes(user.actor)
+                                "
+                                @click.stop="banPlayer(user.actor)"
+                            >
+                                {{
+                                    moderationBusyActor === user.actor && moderationBusyKind === 'ban'
+                                        ? 'Banning…'
+                                        : 'Ban'
+                                }}
+                            </button>
+                        </span>
                     </li>
                 </ul>
+                <div v-if="isChatCreator" class="players-dropdown-ban-section">
+                    <p><strong>Banned Players</strong></p>
+                    <ul v-if="bannedUsersDisplay.length" class="players-dropdown-list">
+                        <li
+                            v-for="user of bannedUsersDisplay"
+                            :key="user.actor"
+                            class="players-dropdown-item players-dropdown-banned-item"
+                        >
+                            <span class="players-dropdown-banned-name">{{ user.name }}</span>
+                            <button
+                                type="button"
+                                class="players-dropdown-unban"
+                                :disabled="moderationBusyActor === user.actor"
+                                @click.stop="unbanPlayer(user.actor)"
+                            >
+                                {{
+                                    moderationBusyActor === user.actor && moderationBusyKind === 'unban'
+                                        ? 'Unbanning…'
+                                        : 'Unban'
+                                }}
+                            </button>
+                        </li>
+                    </ul>
+                    <p v-else class="players-dropdown-ban-empty"><em>No banned players.</em></p>
+                </div>
+                <p v-if="moderationError" class="send-error players-dropdown-mod-error">{{ moderationError }}</p>
             </div>
             <div class="sidebar-danger-zone">
                 <template v-if="isChatCreator">
@@ -55,65 +155,107 @@
                         type="button"
                         class="sidebar-delete-chat"
                         :disabled="isDeletingChat"
-                        @click="deleteChatAsOwner()"
+                        @click="openDeleteChatConfirm()"
                     >
-                        {{ isDeletingChat ? 'Deleting…' : 'Delete chat' }}
+                        Delete Chat
                     </button>
                     <p class="sidebar-hint-small">
                         <b>Warning</b>: This chat will be deleted for everyone permanently.
                     </p>
                 </template>
                 <button type="button" class="sidebar-forget-chat" @click="forgetChatPermanently()">
-                    Remove from Known Chats
+                    Leave Chat
                 </button>
                 <p class="sidebar-hint-small">
-                    Removes this chat from your Chats list only. You can join again from Global Chats or with the
-                    chat ID.
+                    You can rejoin again from Public Chats or with an
+                    invite link.
                 </p>
                 <p v-if="deleteChatError" class="send-error">{{ deleteChatError }}</p>
                 <p v-if="forgetChatError" class="send-error">{{ forgetChatError }}</p>
             </div>
-            <button type="button" class="leave-chat" @click="leaveChat()">Leave Chat</button>
+            <button type="button" class="leave-chat" @click="leaveChat()">Back to Lobby</button>
         </aside>
 
         <section class="chat-window">
-            <h2>Messages</h2>
-            <div class="message-list">
+            <div class="chat-window-messages-header">
+                <div class="message-list-jump" role="group" aria-label="Jump by day in conversation">
+                    <button
+                        type="button"
+                        class="message-list-jump-btn"
+                        title="Previous day"
+                        aria-label="Jump to previous day of messages"
+                        @click="jumpMessageListToOlderDay()"
+                    >
+                        ↑
+                    </button>
+                    <button
+                        type="button"
+                        class="message-list-jump-btn"
+                        title="Next day"
+                        aria-label="Jump to next day of messages"
+                        @click="jumpMessageListToNewerDay()"
+                    >
+                        ↓
+                    </button>
+                </div>
+            </div>
+            <div
+                ref="messageListEl"
+                class="message-list"
+                @scroll.passive="onMessageListScroll"
+            >
                 <p v-if="areMessageObjectsLoading">
                     <em>Loading messages...</em>
                 </p>
                 <ul v-else>
                     <li
-                        v-for="object of visibleMessageObjects"
-                        :key="object.url"
-                        :class="{ 'own-message': object.actor === $graffitiSession.value?.actor }"
+                        v-for="row of messageTimelineRows"
+                        :key="row.type === 'day' ? `day-${row.dayKey}` : row.object.url"
+                        :data-message-url="row.type === 'message' ? row.object.url : null"
+                        :class="{
+                            'message-day-separator-wrap': row.type === 'day',
+                            'own-message':
+                                row.type === 'message' &&
+                                row.object.actor === $graffitiSession.value?.actor,
+                        }"
                     >
-                        <div class="message-row">
-                            <UserAvatar
-                                :name="object.value.profileName || 'User'"
-                                :image-url="object.value.profileAvatar"
-                                :clickable="object.actor !== $graffitiSession.value?.actor"
-                                @click="onProfileAvatarClick(object)"
-                            />
-                            <div class="message-body">
-                                <strong class="message-name">
-                                    {{ object.value.profileName || 'Unknown user' }}
-                                </strong>
-                                <p class="message-text">{{ object.value.content }}</p>
-                                <small v-if="object.value.privateToActor" class="pm-tag">
-                                    Private message to {{ object.value.privateToNickname }}
-                                </small>
+                        <template v-if="row.type === 'day'">
+                            <div class="message-day-separator" role="presentation">
+                                <span class="message-day-line" aria-hidden="true"></span>
+                                <time class="message-day-label" :datetime="row.dayKey">{{
+                                    row.label
+                                }}</time>
+                                <span class="message-day-line" aria-hidden="true"></span>
                             </div>
-                        </div>
-                        <button
-                            v-if="object.actor === $graffitiSession.value?.actor"
-                            type="button"
-                            @click="deleteMessage(object)"
-                            :disabled="isDeleting.has(object.url)"
-                            class="delete_button"
-                        >
-                            {{ isDeleting.has(object.url) ? 'Deleting...' : 'Delete' }}
-                        </button>
+                        </template>
+                        <template v-else>
+                            <div class="message-row">
+                                <UserAvatar
+                                    :name="row.object.value.profileName || 'User'"
+                                    :image-url="row.object.value.profileAvatar"
+                                    :clickable="row.object.actor !== $graffitiSession.value?.actor"
+                                    @click="onProfileAvatarClick(row.object)"
+                                />
+                                <div class="message-body">
+                                    <strong class="message-name">
+                                        {{ row.object.value.profileName || 'Unknown user' }}
+                                    </strong>
+                                    <p class="message-text">{{ row.object.value.content }}</p>
+                                    <small v-if="row.object.value.privateToActor" class="pm-tag">
+                                        Private message to {{ row.object.value.privateToNickname }}
+                                    </small>
+                                </div>
+                            </div>
+                            <button
+                                v-if="row.object.actor === $graffitiSession.value?.actor"
+                                type="button"
+                                @click="deleteMessage(row.object)"
+                                :disabled="isDeleting.has(row.object.url)"
+                                class="delete_button"
+                            >
+                                {{ isDeleting.has(row.object.url) ? 'Deleting...' : 'Delete' }}
+                            </button>
+                        </template>
                     </li>
                 </ul>
             </div>
@@ -129,15 +271,20 @@
                         <span>{{ activeProfile?.name || 'Profile' }}</span>
                     </button>
                     <div v-if="showProfileMenu" class="profile-popup">
-                        <p><strong>Profiles for this chat</strong></p>
+                        <p><strong>{{currentChatName}} Profiles</strong></p>
                         <ul class="profile-list">
-                            <li v-for="profile of currentProfiles" :key="profile.id">
-                                <button type="button" @click="selectProfile(profile.id)">
-                                    {{ profile.name }}
+                            <li v-for="profile of currentProfiles" :key="profile.id" class="profile-list-item">
+                                <button type="button" class="profile-select-btn" @click="selectProfile(profile.id)">
+                                    <UserAvatar
+                                        size="small"
+                                        :name="profile.name"
+                                        :image-url="profile.avatar || ''"
+                                    />
+                                    <span class="profile-list-name">{{ profile.name }}</span>
                                 </button>
                                 <button
                                     type="button"
-                                    class="danger"
+                                    class="danger profile-remove-btn"
                                     @click="removeProfile(profile.id)"
                                     :disabled="currentProfiles.length <= 1"
                                 >
@@ -146,11 +293,11 @@
                             </li>
                         </ul>
                         <div class="profile-create-form">
-                            <input type="text" v-model="newProfileName" placeholder="New profile name" />
+                            <input type="text" v-model="newProfileName" placeholder="New Profile Name" />
                             <input
                                 type="text"
                                 v-model="newProfileAvatar"
-                                placeholder="Avatar image URL (optional)"
+                                placeholder="Avatar Image URL (optional)"
                             />
                             <button type="button" @click="createProfile()" :disabled="!newProfileName.trim()">
                                 Add Profile
@@ -184,47 +331,95 @@
         </section>
     </section>
 
-    <div v-if="showGameOverlay" class="overlay-backdrop" @click.self="closeOverlays()">
+    <div v-if="showGameOverlay && isChatCreator" class="overlay-backdrop" @click.self="closeOverlays()">
         <section class="overlay-card overlay-card-wide">
-            <h3>Game Settings</h3>
-            <template v-if="isChatCreator">
-                <form class="overlay-stack" @submit.prevent="saveGameSettings()">
-                    <label class="stack-label">
-                        Game
-                        <select :value="settingsGame" class="overlay-select" @change="onSettingsGameSelection">
-                            <option v-for="g in PARTYUP_GAME_OPTIONS" :key="g.value" :value="g.value">
-                                {{ g.label }}
-                            </option>
-                        </select>
-                    </label>
-                    <label class="stack-label">
-                        Max players
-                        <input
-                            type="number"
-                            :min="settingsMinPlayers"
-                            :max="PARTYUP_MAX_PLAYERS"
-                            v-model.number="settingsMaxPlayers"
-                        />
-                    </label>
-                    <p class="overlay-hint">
-                        Minimum is <strong>{{ settingsMinPlayers }}</strong> (players already in this chat).
-                        Maximum is <strong>{{ PARTYUP_MAX_PLAYERS }}</strong>.
-                    </p>
-                    <p v-if="settingsSaveError" class="send-error">{{ settingsSaveError }}</p>
-                    <div class="overlay-actions">
-                        <button type="submit">Save</button>
-                        <button type="button" @click="closeOverlays()">Close</button>
-                    </div>
-                </form>
-            </template>
-            <template v-else>
-                <p class="overlay-readonly-hint">
-                    Only the person who created this chat can change the game or player limit.
+            <h3>Chat Settings</h3>
+            <form class="overlay-stack" @submit.prevent="saveGameSettings()">
+                <label class="stack-label">
+                    Change Chat Name
+                    <input
+                        type="text"
+                        v-model="settingsChatTitle"
+                        class="overlay-text-input"
+                        maxlength="80"
+                        placeholder="Name shown in the header and lobby"
+                        autocomplete="off"
+                    />
+                </label>
+                <label class="stack-label">
+                    Change Game
+                    <select :value="settingsGame" class="overlay-select" @change="onSettingsGameSelection">
+                        <option v-for="g in PARTYUP_GAME_OPTIONS" :key="g.value" :value="g.value">
+                            {{ g.label }}
+                        </option>
+                    </select>
+                </label>
+                <label v-if="settingsGame === 'Other'" class="stack-label">
+                    New Game Name
+                    <input
+                        type="text"
+                        v-model="settingsOtherGameDetail"
+                        class="overlay-text-input"
+                        maxlength="80"
+                        placeholder="Insert custom game name here"
+                        autocomplete="off"
+                        @blur="saveOtherGameDetailIfNeeded()"
+                    />
+                </label>
+                <label class="stack-label">
+                    Change Max Number of Players
+                    <input
+                        type="number"
+                        :min="settingsMinPlayers"
+                        :max="PARTYUP_MAX_PLAYERS"
+                        v-model.number="settingsMaxPlayers"
+                    />
+                </label>
+                <p class="overlay-hint">
+                    Minimum is <strong>{{ settingsMinPlayers }}</strong> (players already in this chat).
+                    Maximum is <strong>{{ PARTYUP_MAX_PLAYERS }}</strong>.
                 </p>
-                <p><strong>Game:</strong> {{ currentChatGame }}</p>
-                <p><strong>Max players:</strong> {{ currentChatPlayers }}</p>
-                <button type="button" @click="closeOverlays()">Close</button>
-            </template>
+                <label class="overlay-checkbox-label">
+                    <span>Hide invite link</span>
+                    <input type="checkbox" v-model="settingsInviteLocked" />
+                </label>
+                <p v-if="settingsSaveError" class="send-error">{{ settingsSaveError }}</p>
+                <div class="overlay-actions">
+                    <button type="submit">Save</button>
+                    <button type="button" @click="closeOverlays()">Close</button>
+                </div>
+            </form>
+        </section>
+    </div>
+    <div
+        v-if="showDeleteChatConfirm"
+        class="warning-pop-backdrop delete-chat-confirm-backdrop"
+        @click.self="cancelDeleteChatConfirm()"
+    >
+        <section
+            class="warning-pop-card delete-chat-confirm-card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-chat-confirm-title"
+            @click.stop
+        >
+            <h3 id="delete-chat-confirm-title">Delete this chat?</h3>
+            <p>
+                The chat will be permanently deleted. Proceed?
+            </p>
+            <div class="warning-pop-actions">
+                <button type="button" :disabled="isDeletingChat" @click="cancelDeleteChatConfirm()">
+                    Cancel
+                </button>
+                <button
+                    type="button"
+                    class="warning-pop-proceed delete-chat-confirm-proceed"
+                    :disabled="isDeletingChat"
+                    @click="confirmDeleteChatAsOwner()"
+                >
+                    {{ isDeletingChat ? 'Deleting…' : 'Confirm' }}
+                </button>
+            </div>
         </section>
     </div>
     <div v-if="showGameChangeWarning" class="warning-pop-backdrop" @click.self="cancelGameSelectionChange()">
@@ -240,13 +435,276 @@
         </section>
     </div>
     <div v-if="showChatOverlay" class="overlay-backdrop" @click.self="closeOverlays()">
-        <section class="overlay-card">
-            <h3>Chat tools</h3>
-            <form @submit.prevent>
-                <input type="search" id="search" name="search" placeholder="Search Chat" />
-                <button type="submit">Search</button>
-            </form>
+        <section class="overlay-card overlay-card-wide">
+            <h3>General Tools</h3>
+            <fieldset class="chat-display-prefs-fieldset">
+                <legend>Chat Info</legend>
+                <p class="overlay-hint chat-display-prefs-lead">
+                    Choose what information is visible in the chat.
+                </p>
+                <label class="chat-display-prefs-row overlay-chat-pref-row">
+                    <input type="checkbox" v-model="chatDisplayPrefs.showGame" />
+                    <span>Game name</span>
+                </label>
+                <label class="chat-display-prefs-row overlay-chat-pref-row">
+                    <input type="checkbox" v-model="chatDisplayPrefs.showMaxPlayers" />
+                    <span>Max players</span>
+                </label>
+                <label class="chat-display-prefs-row overlay-chat-pref-row">
+                    <input type="checkbox" v-model="chatDisplayPrefs.showPlayersOnline" />
+                    <span>Players online</span>
+                </label>
+            </fieldset>
+            <fieldset class="chat-display-prefs-fieldset overlay-game-help-fieldset">
+                <legend>Game Help</legend>
+                <button type="button" class="overlay-open-rulebook" @click="openRulebook()">
+                    Open Rulebook
+                </button>
+                <div v-if="showGameHelpDice" class="game-help-dice-row">
+                    <label class="game-help-dice-label">
+                        <span class="game-help-dice-label-text">Roll a Die</span>
+                        <select v-model.number="selectedDiceSides" class="overlay-select game-help-dice-select">
+                            <option v-for="opt in PARTYUP_DICE_OPTIONS" :key="opt.sides" :value="opt.sides">
+                                {{ opt.label }}
+                            </option>
+                        </select>
+                    </label>
+                    <button
+                        type="button"
+                        class="game-help-roll-btn"
+                        @click="rollDiceAndPmSelf()"
+                        :disabled="isRollingDice || joinBlocked"
+                    >
+                        {{ isRollingDice ? 'Rolling…' : 'Roll' }}
+                    </button>
+                </div>
+                <p v-if="showGameHelpDice" class="overlay-hint game-help-dice-hint">
+                    Result is sent to you as a private message.
+                </p>
+                <div v-if="showGameHelpCatan" class="game-help-catan">
+                    <p class="game-help-tool-title">Your Catan Pieces</p>
+                    <ul class="game-help-catan-list" role="list">
+                        <li class="game-help-catan-row">
+                            <span class="game-help-catan-label">Roads</span>
+                            <div class="game-help-catan-stepper">
+                                <button
+                                    type="button"
+                                    class="game-help-catan-btn"
+                                    aria-label="Decrease roads"
+                                    @click="adjustCatan('roads', -1)"
+                                >
+                                    ▼
+                                </button>
+                                <span class="game-help-catan-value" aria-live="polite">{{
+                                    catanCountRoads
+                                }}</span>
+                                <button
+                                    type="button"
+                                    class="game-help-catan-btn"
+                                    aria-label="Increase roads"
+                                    @click="adjustCatan('roads', 1)"
+                                >
+                                    ▲
+                                </button>
+                            </div>
+                        </li>
+                        <li class="game-help-catan-row">
+                            <span class="game-help-catan-label">Settlements</span>
+                            <div class="game-help-catan-stepper">
+                                <button
+                                    type="button"
+                                    class="game-help-catan-btn"
+                                    aria-label="Decrease settlements"
+                                    @click="adjustCatan('settlements', -1)"
+                                >
+                                    ▼
+                                </button>
+                                <span class="game-help-catan-value">{{ catanCountSettlements }}</span>
+                                <button
+                                    type="button"
+                                    class="game-help-catan-btn"
+                                    aria-label="Increase settlements"
+                                    @click="adjustCatan('settlements', 1)"
+                                >
+                                    ▲
+                                </button>
+                            </div>
+                        </li>
+                        <li class="game-help-catan-row">
+                            <span class="game-help-catan-label">Cities</span>
+                            <div class="game-help-catan-stepper">
+                                <button
+                                    type="button"
+                                    class="game-help-catan-btn"
+                                    aria-label="Decrease cities"
+                                    @click="adjustCatan('cities', -1)"
+                                >
+                                    ▼
+                                </button>
+                                <span class="game-help-catan-value">{{ catanCountCities }}</span>
+                                <button
+                                    type="button"
+                                    class="game-help-catan-btn"
+                                    aria-label="Increase cities"
+                                    @click="adjustCatan('cities', 1)"
+                                >
+                                    ▲
+                                </button>
+                            </div>
+                        </li>
+                        <li class="game-help-catan-row">
+                            <span class="game-help-catan-label">Victory Points</span>
+                            <div class="game-help-catan-stepper">
+                                <button
+                                    type="button"
+                                    class="game-help-catan-btn"
+                                    aria-label="Decrease victory points"
+                                    @click="adjustCatan('vp', -1)"
+                                >
+                                    ▼
+                                </button>
+                                <span class="game-help-catan-value">{{ catanCountVP }}</span>
+                                <button
+                                    type="button"
+                                    class="game-help-catan-btn"
+                                    aria-label="Increase victory points"
+                                    @click="adjustCatan('vp', 1)"
+                                >
+                                    ▲
+                                </button>
+                            </div>
+                        </li>
+                    </ul>
+                </div>
+                <div v-if="showGameHelpBotc" class="game-help-botc">
+                    <label class="game-help-botc-select-wrap stack-label">
+                        <span class="game-help-tool-title">Your role</span>
+                        <select v-model="selectedBotcRoleId" class="overlay-select game-help-botc-select">
+                            <option value="" disabled selected>Choose a role…</option>
+                            <option v-for="r in botcRolesForSelect" :key="r.id" :value="r.id">
+                                {{ r.name }}
+                            </option>
+                        </select>
+                    </label>
+                    <div v-if="selectedBotcRoleDetail" class="game-help-botc-detail">
+                        <p class="game-help-botc-team">
+                            <strong>Team:</strong>
+                            {{ selectedBotcRoleDetail.teamLabel }}
+                        </p>
+                        <p class="game-help-botc-blurb">{{ selectedBotcRoleDetail.blurb }}</p>
+                    </div>
+                </div>
+            </fieldset>
+            <fieldset class="chat-display-prefs-fieldset overlay-chat-search-fieldset">
+                <legend>Search Messages</legend>
+                <p class="overlay-hint chat-display-prefs-lead overlay-chat-search-hint">
+                    Search messages with keywords. Add
+                    <code>@[name]</code>
+                    to filter by sender.
+                </p>
+                <div class="chat-search-input-wrap">
+                    <input
+                        id="chat-search-input"
+                        ref="chatSearchInputEl"
+                        v-model="chatSearchQuery"
+                        type="search"
+                        class="overlay-text-input chat-search-field"
+                        placeholder="Ex. @[DM] last session"
+                        autocomplete="off"
+                        autocorrect="off"
+                        spellcheck="false"
+                        @input="onChatSearchInput"
+                        @click="onChatSearchSelect"
+                        @keyup="onChatSearchKeydown"
+                    />
+                    <ul
+                        v-if="chatSearchMentionSuggestions.length"
+                        class="chat-search-suggestions"
+                        role="listbox"
+                    >
+                        <li v-for="u of chatSearchMentionSuggestions" :key="u.actor" role="option">
+                            <button
+                                type="button"
+                                class="chat-search-suggestion-btn"
+                                @mousedown.prevent="applyChatSearchUserSuggestion(u)"
+                            >
+                                <UserAvatar size="small" :name="u.name" :image-url="u.avatar || ''" />
+                                <span>{{ u.name }}</span>
+                            </button>
+                        </li>
+                    </ul>
+                </div>
+                <div v-if="chatSearchQuery.trim()" class="overlay-chat-search-results">
+                    <p v-if="!chatSearchResults.length" class="overlay-chat-search-empty">
+                        No messages match this search.
+                    </p>
+                    <ul v-else class="overlay-chat-search-result-list">
+                        <li v-for="msg of chatSearchResults" :key="msg.url">
+                            <button
+                                type="button"
+                                class="overlay-chat-search-hit"
+                                @click="scrollToChatSearchResult(msg)"
+                            >
+                                <span class="overlay-chat-search-hit-meta">
+                                    <strong>{{ msg.value.profileName || 'User' }}</strong>
+                                    <span class="overlay-chat-search-hit-time">{{
+                                        formatMessageSearchTime(msg.value.published)
+                                    }}</span>
+                                </span>
+                                <span class="overlay-chat-search-hit-snippet">{{
+                                    formatChatSearchSnippet(msg.value.content)
+                                }}</span>
+                            </button>
+                        </li>
+                    </ul>
+                </div>
+            </fieldset>
             <button type="button" @click="closeOverlays()">Close</button>
+        </section>
+    </div>
+    <div
+        v-if="showRulebookViewer"
+        class="overlay-backdrop rulebook-viewer-backdrop"
+        @click.self="closeRulebookViewer()"
+    >
+        <section class="overlay-card overlay-card-rulebook" role="dialog" aria-modal="true">
+            <header class="rulebook-viewer-header">
+                <h3>Rulebook — {{ rulebookMissingGame }}</h3>
+                <div class="rulebook-viewer-actions">
+                    <button
+                        v-if="rulebookViewerUrl"
+                        type="button"
+                        class="rulebook-open-tab"
+                        @click="openRulebookInNewTab()"
+                    >
+                        Open in new tab
+                    </button>
+                    <button type="button" class="rulebook-close" @click="closeRulebookViewer()">Close</button>
+                </div>
+            </header>
+            <p v-if="rulebookViewerUrl" class="overlay-hint rulebook-iframe-hint">
+                If the frame stays empty, the site may block embedding — use
+                <strong>Open in new tab</strong>.
+            </p>
+            <iframe
+                v-if="rulebookViewerUrl"
+                class="rulebook-iframe"
+                title="Game rulebook"
+                referrerpolicy="no-referrer-when-downgrade"
+                :src="rulebookViewerUrl"
+            ></iframe>
+            <div v-else class="rulebook-missing">
+                <p>
+                    No built-in rulebook link is mapped for
+                    <strong>{{ rulebookMissingGame }}</strong>.
+                    Preset games use links from
+                    <code>shared/game-rulebooks.js</code>
+                    — ask your host or add a URL for your custom game title there.
+                </p>
+                <p class="overlay-hint">
+                    You can still agree on house rules in chat, or paste a PDF link in the room for everyone.
+                </p>
+            </div>
         </section>
     </div>
 </template>

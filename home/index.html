@@ -1,60 +1,23 @@
 <section class="chat-layout">
-                <article class="chat-box create-chat-box">
-                    <h2>Create Chat</h2>
-                    <form @submit.prevent="newChat()" class="stack">
-                        <input type="text" v-model="chatTitle" placeholder="Chat Title" />
-                        <label class="stack-label create-chat-game-label">
-                            <span>Game</span>
-                            <select v-model="chatGame" class="create-chat-game-select">
-                                <option v-for="g in PARTYUP_GAME_OPTIONS" :key="g.value" :value="g.value">
-                                    {{ g.label }}
-                                </option>
-                            </select>
-                        </label>
-                        <label class="inline-field">
-                            <b>Players:</b>
-                            <input
-                                type="number"
-                                min="1"
-                                :max="PARTYUP_MAX_PLAYERS"
-                                v-model.number="chatPlayers"
-                            />
-                        </label>
-                        <label class="inline-field">
-                            <b>Private:</b>
-                            <input type="checkbox" v-model="chatPrivacy" />
-                        </label>
-                        <button type="submit" :disabled="!chatTitle || isRandomizing">
-                            {{ isRandomizing ? "Creating..." : "Create Chat" }}
-                        </button>
-                    </form>
-                </article>
-
                 <article class="chat-box">
-                    <h2>Enter Chat ID</h2>
-                    <form @submit.prevent="joinKnownChat()" class="stack">
-                        <input
-                            type="text"
-                            v-model="knownChatId"
-                            placeholder="Paste known chat ID"
-                        />
-                        <button type="submit" :disabled="!knownChatId.trim()">
-                            Join Chat
+                    <h2>Joined Chats</h2>
+                    <div class="known-chats-heading-row">
+                        <button type="button" class="known-chats-create-btn" @click="openCreateChatModal">
+                            Create chat
                         </button>
-                    </form>
-                    <h3>Chats</h3>
+                    </div>
                     <ul class="chat-list">
                         <li v-if="!knownChats.length"><em>No known chats yet.</em></li>
                         <li v-for="chat of knownChats" :key="chat.channel">
                             <button @click="openKnownChat(chat)" class="chat-link">
-                                {{ chat.title }} <small>({{ chat.channel }})</small>
+                                {{ chat.title }}
                             </button>
                         </li>
                     </ul>
                 </article>
 
                 <article class="chat-box chat-box-global">
-                    <h2>Global Chats</h2>
+                    <h2>Public Chats</h2>
                     <ul class="chat-list">
                         <li v-if="!globalChats.length"><em>No global chats yet.</em></li>
                         <li
@@ -75,3 +38,74 @@
                     </ul>
                 </article>
             </section>
+
+            <div
+                v-if="showCreateChatModal"
+                class="overlay-backdrop home-create-chat-backdrop"
+                @click.self="closeCreateChatModal"
+            >
+                <section
+                    class="overlay-card home-create-chat-modal"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="home-create-chat-modal-title"
+                >
+                    <div class="home-create-chat-modal-head">
+                        <h2 id="home-create-chat-modal-title">Create Chat</h2>
+                        <button
+                            type="button"
+                            class="home-create-chat-modal-close"
+                            aria-label="Close"
+                            :disabled="isRandomizing"
+                            @click="closeCreateChatModal"
+                        >
+                            ×
+                        </button>
+                    </div>
+                    <form @submit.prevent="newChat()" class="stack">
+                        <input type="text" v-model="chatTitle" placeholder="Chat Title" />
+                        <label class="stack-label create-chat-game-label">
+                            <span>Game</span>
+                            <select v-model="chatGame" class="create-chat-game-select">
+                                <option v-for="g in PARTYUP_GAME_OPTIONS" :key="g.value" :value="g.value">
+                                    {{ g.label }}
+                                </option>
+                            </select>
+                        </label>
+                        <label
+                            v-if="chatGame === 'Other'"
+                            class="stack-label create-chat-game-label home-create-chat-other-game"
+                        >
+                            <span>New Game Name</span>
+                            <input
+                                type="text"
+                                v-model="chatOtherGameDetail"
+                                maxlength="80"
+                                placeholder="Insert custom game name here"
+                                autocomplete="off"
+                            />
+                        </label>
+                        <label class="inline-field">
+                            <b>Players:</b>
+                            <input
+                                type="number"
+                                min="1"
+                                :max="PARTYUP_MAX_PLAYERS"
+                                v-model.number="chatPlayers"
+                            />
+                        </label>
+                        <label class="inline-field">
+                            <b>Private:</b>
+                            <input type="checkbox" v-model="chatPrivacy" />
+                        </label>
+                        <div class="home-create-chat-modal-actions">
+                            <button type="button" class="home-create-chat-cancel" @click="closeCreateChatModal">
+                                Cancel
+                            </button>
+                            <button type="submit" :disabled="!chatTitle || isRandomizing">
+                                {{ isRandomizing ? "Creating..." : "Create Chat" }}
+                            </button>
+                        </div>
+                    </form>
+                </section>
+            </div>

@@ -29,13 +29,19 @@
         <template id="template">
             <header>
                 <h1 class="header_h1">
-                    <router-link v-if="isChatRoute" :to="{ name: 'home' }" class="header-link header-chat-title">
+                    <button
+                        v-if="isChatRoute"
+                        type="button"
+                        class="header-link header-chat-title"
+                        aria-label="Scroll to top of messages"
+                        @click="onChatTitleClick"
+                    >
                         {{ displayedChatTitle }}<span
                             v-show="displayedChatTitle !== headerTitle"
                             class="header-chat-caret"
                             aria-hidden="true"
                         ></span>
-                    </router-link>
+                    </button>
                     <router-link v-else :to="{ name: 'home' }" class="header-link"> PartyUp </router-link>
                 </h1>
                 <nav v-if="showHomeNav" class="header-home-nav" aria-label="Lobby and profile">
@@ -70,8 +76,19 @@
             <main v-if="$graffitiSession.value">
                 <router-view></router-view>
             </main>
-            <main v-else-if="$graffitiSession.value === null">
-                <p><em>Log in to begin chatting!</em></p>
+            <main v-else-if="$graffitiSession.value === null" class="logged-out-main">
+                <section class="logged-out-welcome" aria-labelledby="logged-out-welcome-title">
+                    <h2 id="logged-out-welcome-title">Welcome to PartyUp</h2>
+                    <p>
+                        Find teammates, join new chats, and keep your party together across games, all in one
+                        place. 
+                    </p>
+                    <p class="logged-out-welcome-lede">
+                        Create profiles within chats for all your characters, PM 
+                        other players for secret plans, and peruse your personal rulebook!
+                    </p>
+                    <p class="logged-out-welcome-hint"><em>Sign up or log in above to get started!</em></p>
+                </section>
             </main>
             <main v-else>
                 <p><em>Loading session...</em></p>

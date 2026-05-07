@@ -1,5 +1,5 @@
 import { ref, computed, watch } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { useGraffiti, useGraffitiSession, useGraffitiDiscover } from "@graffiti-garden/wrapper-vue";
 import {
   loadAllKnownChats,
@@ -12,8 +12,17 @@ import {
   effectiveMaxPlayers,
   clampPlayerCap,
 } from "../shared/chat-meta.js";
+import { extractChatIdFromInviteInput } from "../shared/chat-invite.js";
+
+/** Graffiti chat channels are created with `crypto.randomUUID()` (RFC 4122 string form). */
+const CHAT_ID_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isValidChatChannelId(id) {
+  return typeof id === "string" && CHAT_ID_UUID_RE.test(id.trim());
+}
 
 function setup() {
+  const route = useRoute();
   const router = useRouter();
   const graffiti = useGraffiti();
   const session = useGraffitiSession();
@@ -23,8 +32,14 @@ function setup() {
   const chatPlayers = ref(1);
   const chatPrivacy = ref(false);
   const chatGame = ref(PARTYUP_GAME_OPTIONS[0].value);
+  const chatOtherGameDetail = ref("");
   const knownChatId = ref("");
   const allKnownChats = ref(loadAllKnownChats());
+  const showCreateChatModal = ref(false);
+
+  watch(chatGame, (v) => {
+    if (v !== "Other") chatOtherGameDetail.value = "";
+  });
 
   function addKnownChat(chatInfo) {
     persistKnownChat(allKnownChats.value, session.value, chatInfo);
@@ -55,6 +70,24 @@ function setup() {
     { immediate: true },
   );
 
+  watch(
+    () => ({
+      join: route.query.join,
+      name: route.name,
+      actor: session.value?.actor,
+    }),
+    (state) => {
+      if (state.name !== "home" || state.join == null || state.join === "") return;
+      if (!state.actor) return;
+      const raw = Array.isArray(state.join) ? state.join[0] : state.join;
+      const id = extractChatIdFromInviteInput(String(raw));
+      if (!id || !isValidChatChannelId(id)) return;
+      addKnownChat({ channel: id });
+      router.replace({ name: "chat", params: { chatId: id } });
+    },
+    { immediate: true },
+  );
+
   const partyupChatSchema = {
     properties: {
       value: {
@@ -68,6 +101,9 @@ function setup() {
           game: { type: "string" },
           private: { type: "boolean" },
           published: { type: "number" },
+          inviteLocked: { type: "boolean" },
+          bannedActors: { type: "array", items: { type: "string" } },
+          kickTimestamps: { type: "object" },
         },
       },
     },
@@ -143,12 +179,25 @@ function setup() {
     router.push({ name: "chat", params: { chatId: id } });
   }
 
+  function openCreateChatModal() {
+    showCreateChatModal.value = true;
+  }
+
+  function closeCreateChatModal() {
+    if (isRandomizing.value) return;
+    showCreateChatModal.value = false;
+  }
+
   async function newChat() {
     if (!session.value) return;
     const newChannel = crypto.randomUUID();
     isRandomizing.value = true;
     try {
       const playersCap = clampPlayerCap(chatPlayers.value);
+      const resolvedGame =
+        chatGame.value === "Other"
+          ? chatOtherGameDetail.value.trim() || "Other"
+          : chatGame.value;
       await graffiti.post(
         {
           value: {
@@ -157,7 +206,7 @@ function setup() {
             channel: newChannel,
             title: chatTitle.value.trim(),
             players: playersCap,
-            game: chatGame.value,
+            game: resolvedGame,
             private: chatPrivacy.value,
             published: Date.now(),
           },
@@ -169,12 +218,14 @@ function setup() {
         channel: newChannel,
         title: chatTitle.value.trim(),
         players: playersCap,
-        game: chatGame.value,
+        game: resolvedGame,
       });
       chatTitle.value = "";
       chatPlayers.value = 1;
       chatPrivacy.value = false;
       chatGame.value = PARTYUP_GAME_OPTIONS[0].value;
+      chatOtherGameDetail.value = "";
+      showCreateChatModal.value = false;
       goToChat(newChannel);
     } finally {
       isRandomizing.value = false;
@@ -197,14 +248,22 @@ function setup() {
   }
 
   function joinKnownChat() {
-    const trimmedChatId = knownChatId.value.trim();
-    if (!trimmedChatId) return;
-    addKnownChat({ channel: trimmedChatId });
+    const extracted = extractChatIdFromInviteInput(knownChatId.value);
+    if (!extracted || !isValidChatChannelId(extracted)) return;
+    addKnownChat({ channel: extracted });
     knownChatId.value = "";
-    goToChat(trimmedChatId);
+    goToChat(extracted);
   }
 
+  const canJoinKnownChat = computed(() => {
+    const extracted = extractChatIdFromInviteInput(knownChatId.value);
+    return Boolean(extracted && isValidChatChannelId(extracted));
+  });
+
   return {
+    showCreateChatModal,
+    openCreateChatModal,
+    closeCreateChatModal,
     newChat,
     globalChats,
     changeChat,
@@ -214,7 +273,9 @@ function setup() {
     chatPlayers,
     chatPrivacy,
     chatGame,
+    chatOtherGameDetail,
     knownChatId,
+    canJoinKnownChat,
     knownChats,
     isRandomizing,
     PARTYUP_GAME_OPTIONS,
