@@ -588,7 +588,8 @@ function chatSetup(props) {
     try {
       const actor = session.value?.actor;
       const ch = channel.value;
-      if (actor && ch) {
+      // Forget / delete already removed the row from Joined Chats; do not re-add a bare "Known Chat" entry.
+      if (actor && ch && !suppressKnownChatPersist.value) {
         const all = loadAllKnownChats();
         addKnownChat(all, session.value, { channel: ch, spectator: false });
       }
