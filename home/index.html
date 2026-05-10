@@ -7,13 +7,40 @@
                         </button>
                     </div>
                     <ul class="chat-list">
-                        <li v-if="!knownChats.length"><em>No known chats yet.</em></li>
+                        <li v-if="hasNoJoinedOrPending"><em>No known chats yet.</em></li>
                         <li
-                            v-for="chat of knownChats"
+                            v-for="inv of pendingInvitesDisplay"
+                            :key="'pending-' + inv.channel"
+                            class="chat-item chat-item-pending-invite"
+                        >
+                            <span class="chat-pending-title">{{ inv.title }}</span>
+                            <span class="chat-pending-actions">
+                                <button
+                                    type="button"
+                                    class="chat-pending-accept"
+                                    aria-label="Accept invitation"
+                                    title="Accept and open chat"
+                                    @click="acceptPendingInvite(inv)"
+                                >
+                                    ✓
+                                </button>
+                                <button
+                                    type="button"
+                                    class="chat-pending-decline"
+                                    aria-label="Decline invitation"
+                                    title="Decline"
+                                    @click="declinePendingInvite(inv)"
+                                >
+                                    ×
+                                </button>
+                            </span>
+                        </li>
+                        <li
+                            v-for="chat of joinedChatsList"
                             :key="chat.channel"
                             :class="{ 'chat-item-owned': isOwnedChatChannel(chat.channel) }"
                         >
-                            <button @click="openKnownChat(chat)" class="chat-link">
+                            <button type="button" @click="openKnownChat(chat)" class="chat-link">
                                 {{ chat.title }}
                                 <small v-if="isOwnedChatChannel(chat.channel)" class="chat-owner-tag">
                                     (Owner)
@@ -41,9 +68,8 @@
                                 class="chat-link"
                                 :disabled="isGlobalChatFull(chat)"
                             >
-                                {{ globalChatDisplayTitle(chat) }}
-                                <small v-if="isOwnedGlobalChat(chat)" class="chat-owner-tag"> (Owner)</small>
-                                <small v-if="isGlobalChatFull(chat)" class="chat-global-full-tag"> (full)</small>
+                                <span class="chat-global-title-core">{{ globalChatDisplayTitleBase(chat) }}</span>
+                                <span class="chat-global-meta">{{ globalChatPublicMetaSuffix(chat) }}</span>
                             </button>
                         </li>
                     </ul>

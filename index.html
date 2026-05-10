@@ -87,7 +87,18 @@
                         Create profiles within chats for all your characters, PM 
                         other players for secret plans, and peruse your personal rulebook!
                     </p>
-                    <p class="logged-out-welcome-hint"><em>Sign up or log in above to get started!</em></p>
+                    <p class="logged-out-welcome-hint">
+                        <em>
+                            <button type="button" class="logged-out-login-link" @click="$graffiti.login()">
+                                Sign up
+                            </button>
+                            or
+                            <button type="button" class="logged-out-login-link" @click="$graffiti.login()">
+                                log in
+                            </button>
+                            above to get started!
+                        </em>
+                    </p>
                 </section>
             </main>
             <main v-else>

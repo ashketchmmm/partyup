@@ -88,6 +88,56 @@ export function effectiveChatTitle(objects, channelId) {
   return "";
 }
 
+/** Stored on Chat Create/Update; filters what appears under Game Tools. */
+export const PARTYUP_GAME_TOOL_IDS = ["dice", "catan", "botc"];
+
+export const PARTYUP_GAME_TOOL_OPTIONS = [
+  { id: "dice", label: "Roll a Die" },
+  { id: "catan", label: "Catan Tracker" },
+  { id: "botc", label: "BoTC Role Tracker" },
+];
+
+export const PARTYUP_DEFAULT_ENABLED_GAME_TOOLS = [...PARTYUP_GAME_TOOL_IDS];
+
+/** Valid tool ids only; may be empty if the host disabled every tool. */
+export function normalizeEnabledGameTools(raw) {
+  const allowed = new Set(PARTYUP_GAME_TOOL_IDS);
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  const seen = new Set();
+  for (const x of raw) {
+    const id = String(x || "").trim().toLowerCase();
+    if (!allowed.has(id) || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}
+
+/** Enabled tools from latest Update, else Create, else all three (legacy chats). */
+export function effectiveEnabledGameTools(objects, channelId) {
+  const latest = latestUpdateForChannel(objects, channelId);
+  if (latest?.value != null && Array.isArray(latest.value.enabledGameTools)) {
+    return normalizeEnabledGameTools(latest.value.enabledGameTools);
+  }
+  const create = createForChannel(objects, channelId);
+  if (create?.value != null && Array.isArray(create.value.enabledGameTools)) {
+    return normalizeEnabledGameTools(create.value.enabledGameTools);
+  }
+  return [...PARTYUP_DEFAULT_ENABLED_GAME_TOOLS];
+}
+
+/**
+ * Default tool checkboxes for new chats and after changing game type in Chat Settings.
+ * Host can enable any combination afterward — tools are not hidden by game type.
+ */
+export function defaultEnabledGameToolsForGame(game) {
+  const g = String(game ?? "").trim();
+  if (g === "Catan") return ["catan"];
+  if (isBloodOnTheClocktowerGame(g)) return ["botc"];
+  return ["dice"];
+}
+
 /** Dice types for the General Tools roller. */
 export const PARTYUP_DICE_OPTIONS = [
   { sides: 4, label: "d4" },
@@ -98,7 +148,7 @@ export const PARTYUP_DICE_OPTIONS = [
   { sides: 100, label: "d100" },
 ];
 
-/** From latest Chat Update; when true, only the host should see the invite copy control. */
+/** From latest Chat Update; when true, the whole Invite sidebar block is hidden from non-hosts. */
 export function effectiveInviteLocked(objects, channelId) {
   const latest = latestUpdateForChannel(objects, channelId);
   return Boolean(latest?.value?.inviteLocked);

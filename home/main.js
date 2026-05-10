@@ -5,12 +5,26 @@ import {
   loadAllKnownChats,
   getCurrentUserKnownChats,
   addKnownChat as persistKnownChat,
+  lookupKnownChatTitle,
 } from "../shared/known-chats.js";
+import {
+  loadAllPendingInvites,
+  addPendingInvite,
+  removePendingInvite,
+  getPendingInvitesForUser,
+  dismissPushInviteChannel,
+  clearDismissedPushInviteChannel,
+  isPushInviteChannelDismissed,
+  loadDismissedPushInviteChannels,
+} from "../shared/pending-invites.js";
+import { PARTYUP_INVITE_PUSH_SCHEMA } from "../shared/partyup-invite-push.js";
 import {
   PARTYUP_GAME_OPTIONS,
   PARTYUP_MAX_PLAYERS,
+  defaultEnabledGameToolsForGame,
   effectiveMaxPlayers,
   effectiveChatTitle,
+  effectiveGame,
   clampPlayerCap,
 } from "../shared/chat-meta.js";
 import { extractChatIdFromInviteInput } from "../shared/chat-invite.js";
@@ -20,6 +34,15 @@ const CHAT_ID_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-
 
 function isValidChatChannelId(id) {
   return typeof id === "string" && CHAT_ID_UUID_RE.test(id.trim());
+}
+
+/** Preset game keys (e.g. BoTC) → lobby label; custom titles pass through. */
+function formatPublicChatGameLabel(gameRaw) {
+  const g = String(gameRaw || "").trim();
+  if (!g) return "";
+  const opt = PARTYUP_GAME_OPTIONS.find((o) => o.value === g);
+  if (opt) return opt.label;
+  return g;
 }
 
 function setup() {
@@ -36,6 +59,8 @@ function setup() {
   const chatOtherGameDetail = ref("");
   const knownChatId = ref("");
   const allKnownChats = ref(loadAllKnownChats());
+  const allPendingInvites = ref(loadAllPendingInvites());
+  const allDismissedPushInvites = ref(loadDismissedPushInviteChannels());
   const showCreateChatModal = ref(false);
 
   watch(chatGame, (v) => {
@@ -56,6 +81,8 @@ function setup() {
     (actor) => {
       if (actor) {
         allKnownChats.value = loadAllKnownChats();
+        allPendingInvites.value = loadAllPendingInvites();
+        allDismissedPushInvites.value = loadDismissedPushInviteChannels();
       }
     },
     { immediate: true },
@@ -66,6 +93,8 @@ function setup() {
     (name) => {
       if (name === "home") {
         allKnownChats.value = loadAllKnownChats();
+        allPendingInvites.value = loadAllPendingInvites();
+        allDismissedPushInvites.value = loadDismissedPushInviteChannels();
       }
     },
     { immediate: true },
@@ -83,8 +112,15 @@ function setup() {
       const raw = Array.isArray(state.join) ? state.join[0] : state.join;
       const id = extractChatIdFromInviteInput(String(raw));
       if (!id || !isValidChatChannelId(id)) return;
-      addKnownChat({ channel: id });
-      router.replace({ name: "chat", params: { chatId: id } });
+
+      const known = getCurrentUserKnownChats(allKnownChats.value, session.value);
+      if (known.some((c) => c.channel === id)) {
+        router.replace({ name: "chat", params: { chatId: id } });
+        return;
+      }
+
+      addPendingInvite(allPendingInvites.value, session.value, id);
+      router.replace({ name: "home" });
     },
     { immediate: true },
   );
@@ -103,6 +139,7 @@ function setup() {
           private: { type: "boolean" },
           published: { type: "number" },
           inviteLocked: { type: "boolean" },
+          enabledGameTools: { type: "array", items: { type: "string" } },
           bannedActors: { type: "array", items: { type: "string" } },
           kickTimestamps: { type: "object" },
         },
@@ -113,6 +150,55 @@ function setup() {
   const { objects: chats } = useGraffitiDiscover(
     () => (session.value ? ["partyup-26"] : []),
     partyupChatSchema,
+  );
+
+  const { objects: invitePushObjects } = useGraffitiDiscover(
+    () => (session.value ? ["partyup-26"] : []),
+    PARTYUP_INVITE_PUSH_SCHEMA,
+  );
+
+  watch(
+    () => invitePushObjects.value,
+    () => {
+      const me = session.value?.actor;
+      if (!me) return;
+      const meNorm = String(me).trim().toLowerCase();
+      for (const o of invitePushObjects.value) {
+        const v = o.value;
+        if (!v || v.activity !== "Invite" || v.type !== "ChatInvite") continue;
+        const target = String(v.inviteToActor || "").trim().toLowerCase();
+        if (target !== meNorm) continue;
+        const cid = String(v.channel || "").trim();
+        if (!isValidChatChannelId(cid)) continue;
+        if (isPushInviteChannelDismissed(allDismissedPushInvites.value, session.value, cid)) continue;
+        const known = getCurrentUserKnownChats(allKnownChats.value, session.value);
+        if (known.some((c) => c.channel === cid)) continue;
+        addPendingInvite(allPendingInvites.value, session.value, cid);
+      }
+    },
+    { deep: true, immediate: true },
+  );
+
+  const pendingInvitesDisplay = computed(() => {
+    const list = getPendingInvitesForUser(allPendingInvites.value, session.value);
+    return list.map((p) => ({
+      ...p,
+      title:
+        effectiveChatTitle(chats.value, p.channel) ||
+        lookupKnownChatTitle(session.value, p.channel) ||
+        "Chat invitation",
+    }));
+  });
+
+  const joinedChatsList = computed(() => {
+    const pendingSet = new Set(
+      getPendingInvitesForUser(allPendingInvites.value, session.value).map((x) => x.channel),
+    );
+    return knownChats.value.filter((c) => !pendingSet.has(c.channel));
+  });
+
+  const hasNoJoinedOrPending = computed(
+    () => pendingInvitesDisplay.value.length === 0 && joinedChatsList.value.length === 0,
   );
 
   const globalChats = computed(() =>
@@ -185,10 +271,27 @@ function setup() {
     return n >= max;
   }
 
-  function globalChatDisplayTitle(chat) {
+  function globalChatDisplayTitleBase(chat) {
     const cid = String(chat?.value?.channel || "").trim();
-    if (!cid) return String(chat?.value?.title || "").trim() || "Chat";
-    return effectiveChatTitle(chats.value, cid) || String(chat?.value?.title || "").trim() || "Chat";
+    return (
+      (cid && effectiveChatTitle(chats.value, cid)) ||
+      String(chat?.value?.title || "").trim() ||
+      "Chat"
+    );
+  }
+
+  /** Parenthetical segment: (owner, game label, full) — comma-separated, lowercase status tokens where noted. */
+  function globalChatPublicMetaSuffix(chat) {
+    const cid = String(chat?.value?.channel || "").trim();
+    const parts = [];
+    if (isOwnedGlobalChat(chat)) parts.push("Owner");
+    if (cid) {
+      const gl = formatPublicChatGameLabel(effectiveGame(chats.value, cid));
+      if (gl) parts.push(gl);
+    }
+    if (isGlobalChatFull(chat)) parts.push("full");
+    if (!parts.length) return "";
+    return ` (${parts.join(", ")})`;
   }
 
   function isOwnedChatChannel(channel) {
@@ -238,6 +341,7 @@ function setup() {
             game: resolvedGame,
             private: chatPrivacy.value,
             published: Date.now(),
+            enabledGameTools: [...defaultEnabledGameToolsForGame(resolvedGame)],
           },
           channels: ["partyup-26"],
         },
@@ -276,6 +380,28 @@ function setup() {
     goToChat(chat.channel);
   }
 
+  function acceptPendingInvite(inv) {
+    const id = inv?.channel?.trim();
+    if (!id || !session.value) return;
+    clearDismissedPushInviteChannel(allDismissedPushInvites.value, session.value, id);
+    removePendingInvite(allPendingInvites.value, session.value, id);
+    persistKnownChat(allKnownChats.value, session.value, {
+      channel: id,
+      title:
+        inv.title && inv.title !== "Chat invitation"
+          ? inv.title
+          : lookupKnownChatTitle(session.value, id) || "Known Chat",
+    });
+    goToChat(id);
+  }
+
+  function declinePendingInvite(inv) {
+    const id = inv?.channel?.trim();
+    if (!id || !session.value) return;
+    dismissPushInviteChannel(allDismissedPushInvites.value, session.value, id);
+    removePendingInvite(allPendingInvites.value, session.value, id);
+  }
+
   function joinKnownChat() {
     const extracted = extractChatIdFromInviteInput(knownChatId.value);
     if (!extracted || !isValidChatChannelId(extracted)) return;
@@ -306,11 +432,17 @@ function setup() {
     knownChatId,
     canJoinKnownChat,
     knownChats,
+    pendingInvitesDisplay,
+    joinedChatsList,
+    hasNoJoinedOrPending,
+    acceptPendingInvite,
+    declinePendingInvite,
     isRandomizing,
     PARTYUP_GAME_OPTIONS,
     PARTYUP_MAX_PLAYERS,
     isGlobalChatFull,
-    globalChatDisplayTitle,
+    globalChatDisplayTitleBase,
+    globalChatPublicMetaSuffix,
     isOwnedChatChannel,
     isOwnedGlobalChat,
   };

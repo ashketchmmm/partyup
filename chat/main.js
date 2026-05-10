@@ -26,6 +26,11 @@ import {
   effectiveInviteLocked,
   effectiveBannedActors as bannedActorsForChannel,
   effectiveKickTimestamps,
+  effectiveEnabledGameTools,
+  normalizeEnabledGameTools,
+  defaultEnabledGameToolsForGame,
+  PARTYUP_GAME_TOOL_OPTIONS,
+  PARTYUP_DEFAULT_ENABLED_GAME_TOOLS,
   listChatUpdates,
   presentParticipantActorSet,
   isPartyupPresenceMessage,
@@ -34,6 +39,8 @@ import { getMainProfile } from "../shared/main-profile.js";
 import { headerChatLivePlayers } from "../shared/header-chat-live.js";
 import { PARTYUP_SCROLL_CHAT_TOP_EVENT } from "../shared/chat-ui-events.js";
 import { buildPartyupInviteLink } from "../shared/chat-invite.js";
+import { recordCoplayActors, getCoplayActorsForSidebar } from "../shared/coplay.js";
+import { normalizePartyupActorHandle } from "../shared/partyup-invite-push.js";
 import { loadScrollRatio, saveScrollRatio } from "../shared/chat-scroll-state.js";
 import { chatDisplayPrefs } from "../shared/chat-display-prefs.js";
 import { resolveRulebookUrl } from "../shared/game-rulebooks.js";
@@ -183,6 +190,30 @@ function getActiveChatSearchMention(query, cursorPos) {
   return null;
 }
 
+const REPLY_PREVIEW_MAX = 180;
+
+function truncateReplyPreview(s, maxLen = REPLY_PREVIEW_MAX) {
+  const t = String(s || "").trim().replace(/\s+/g, " ");
+  if (t.length <= maxLen) return t;
+  return `${t.slice(0, maxLen - 1)}…`;
+}
+
+/** When replying to a PM, who receives our outgoing message. */
+function replyPrivateRecipient(parentMsg, sessionActor) {
+  const v = parentMsg?.value;
+  if (!v?.privateToActor) return null;
+  if (parentMsg.actor === sessionActor) {
+    return {
+      actor: v.privateToActor,
+      nickname: (v.privateToNickname || "").trim() || "User",
+    };
+  }
+  return {
+    actor: parentMsg.actor,
+    nickname: (v.profileName || "").trim() || "User",
+  };
+}
+
 function chatSetup(props) {
   const router = useRouter();
   const graffiti = useGraffiti();
@@ -191,6 +222,7 @@ function chatSetup(props) {
 
   const showGameOverlay = ref(false);
   const showChatOverlay = ref(false);
+  const showToolOverlay = ref(false);
   const showRulebookViewer = ref(false);
   const rulebookViewerUrl = ref("");
   const rulebookMissingGame = ref("");
@@ -207,6 +239,7 @@ function chatSetup(props) {
   const newProfileName = ref("");
   const newProfileAvatar = ref("");
   const privateMessageTarget = ref(null);
+  const replyDraftTarget = ref(null);
   const sendError = ref("");
   const suppressKnownChatPersist = ref(false);
   const deleteChatError = ref("");
@@ -309,6 +342,7 @@ function chatSetup(props) {
       catanCountCities.value = 0;
       catanCountVP.value = 0;
       selectedBotcRoleId.value = "";
+      replyDraftTarget.value = null;
       if (id) ensureChatProfiles(id);
     },
     { immediate: true },
@@ -387,6 +421,7 @@ function chatSetup(props) {
           private: { type: "boolean" },
           published: { type: "number" },
           inviteLocked: { type: "boolean" },
+          enabledGameTools: { type: "array", items: { type: "string" } },
           bannedActors: { type: "array", items: { type: "string" } },
           kickTimestamps: { type: "object" },
         },
@@ -438,13 +473,18 @@ function chatSetup(props) {
     return channel.value ? effectiveGame(chats.value, channel.value) : "Other";
   });
 
-  /** Dice: everything except Catan and BoTC (`BoTC` is the stored preset key). */
-  const showGameHelpDice = computed(() => {
-    const g = currentChatGame.value;
-    return g !== "Catan" && !isBloodOnTheClocktowerGame(g);
-  });
-  const showGameHelpCatan = computed(() => currentChatGame.value === "Catan");
-  const showGameHelpBotc = computed(() => isBloodOnTheClocktowerGame(currentChatGame.value));
+  const enabledGameToolsEffective = computed(() =>
+    channel.value ? effectiveEnabledGameTools(chats.value, channel.value) : PARTYUP_DEFAULT_ENABLED_GAME_TOOLS,
+  );
+
+  const enabledGameToolsSet = computed(() => new Set(enabledGameToolsEffective.value));
+
+  /** Shown when the host enabled the tool — not gated by chat game type. */
+  const showToolDice = computed(() => enabledGameToolsSet.value.has("dice"));
+  const showToolCatan = computed(() => enabledGameToolsSet.value.has("catan"));
+  const showToolBotc = computed(() => enabledGameToolsSet.value.has("botc"));
+
+  const hasAnyGameTool = computed(() => showToolDice.value || showToolCatan.value || showToolBotc.value);
 
   const botcRolesForSelect = computed(() =>
     [...PARTYUP_BOTC_ROLES]
@@ -551,8 +591,10 @@ function chatSetup(props) {
     }
     myMessage.value = "";
     privateMessageTarget.value = null;
+    replyDraftTarget.value = null;
     showGameOverlay.value = false;
     showChatOverlay.value = false;
+    showToolOverlay.value = false;
     showRulebookViewer.value = false;
     rulebookViewerUrl.value = "";
     rulebookMissingGame.value = "";
@@ -655,6 +697,7 @@ function chatSetup(props) {
   const settingsOtherGameDetail = ref("");
   const settingsMaxPlayers = ref(1);
   const settingsInviteLocked = ref(false);
+  const settingsEnabledGameTools = ref([...PARTYUP_DEFAULT_ENABLED_GAME_TOOLS]);
   const settingsSaveError = ref("");
   const showGameChangeWarning = ref(false);
   const pendingGameChoice = ref(null);
@@ -680,6 +723,7 @@ function chatSetup(props) {
     }
     settingsMaxPlayers.value = maxPlayersEffective.value;
     settingsInviteLocked.value = inviteLockedEffective.value;
+    settingsEnabledGameTools.value = [...effectiveEnabledGameTools(chats.value, channel.value)];
     pendingGameChoice.value = null;
     showGameChangeWarning.value = false;
     showGameOverlay.value = true;
@@ -697,6 +741,11 @@ function chatSetup(props) {
     if (pendingGameChoice.value) {
       settingsGame.value = pendingGameChoice.value;
       if (settingsGame.value !== "Other") settingsOtherGameDetail.value = "";
+      const resolvedGame =
+        settingsGame.value === "Other"
+          ? settingsOtherGameDetail.value.trim() || "Other"
+          : settingsGame.value;
+      settingsEnabledGameTools.value = [...defaultEnabledGameToolsForGame(resolvedGame)];
     }
     pendingGameChoice.value = null;
     showGameChangeWarning.value = false;
@@ -709,12 +758,21 @@ function chatSetup(props) {
   }
 
   function openChatOverlay() {
+    showToolOverlay.value = false;
+    closeRulebookViewer();
     showChatOverlay.value = true;
+  }
+
+  function openToolOverlay() {
+    showChatOverlay.value = false;
+    closeRulebookViewer();
+    showToolOverlay.value = true;
   }
 
   function closeOverlays() {
     showGameOverlay.value = false;
     showChatOverlay.value = false;
+    showToolOverlay.value = false;
     showRulebookViewer.value = false;
     rulebookViewerUrl.value = "";
     pendingGameChoice.value = null;
@@ -729,6 +787,8 @@ function chatSetup(props) {
   }
 
   function openRulebook() {
+    showChatOverlay.value = false;
+    showToolOverlay.value = false;
     const game = currentChatGame.value;
     rulebookMissingGame.value = (game || "").trim() || "this game";
     const url = resolveRulebookUrl(game);
@@ -767,6 +827,9 @@ function chatSetup(props) {
           profileAvatar: { type: "string" },
           privateToActor: { type: "string" },
           privateToNickname: { type: "string" },
+          replyToUrl: { type: "string" },
+          replyToPreview: { type: "string" },
+          replyToAuthorName: { type: "string" },
         },
       },
     },
@@ -904,6 +967,8 @@ function chatSetup(props) {
       ),
   );
 
+  const showSidebarInviteSection = computed(() => isChatCreator.value || !inviteLockedEffective.value);
+
   const roomEnteredAt = ref(0);
 
   async function postHostChatUpdate(overrides = {}) {
@@ -913,6 +978,10 @@ function chatSetup(props) {
     const inviteL = overrides.inviteLocked ?? inviteLockedEffective.value;
     const banned = overrides.bannedActors ?? [...bannedActorsEffective.value];
     const kicks = overrides.kickTimestamps ?? { ...kickTimestampsEffective.value };
+    const enabledTools =
+      overrides.enabledGameTools !== undefined
+        ? normalizeEnabledGameTools(overrides.enabledGameTools)
+        : effectiveEnabledGameTools(chats.value, channel.value);
     const titleOverride =
       overrides.title !== undefined ? String(overrides.title).trim() : null;
     const title =
@@ -931,6 +1000,7 @@ function chatSetup(props) {
           game,
           published: Date.now(),
           inviteLocked: inviteL,
+          enabledGameTools: enabledTools,
           bannedActors: banned,
           kickTimestamps: kicks,
         },
@@ -966,6 +1036,7 @@ function chatSetup(props) {
         players: cap,
         game: resolvedGame,
         inviteLocked: settingsInviteLocked.value,
+        enabledGameTools: normalizeEnabledGameTools(settingsEnabledGameTools.value),
         bannedActors: [...bannedActorsEffective.value],
         kickTimestamps: { ...kickTimestampsEffective.value },
       });
@@ -1141,6 +1212,81 @@ function chatSetup(props) {
     return directory;
   });
 
+  const coplaySidebarTick = ref(0);
+  watch(channel, () => {
+    inviteUserActorInput.value = "";
+    invitePushFeedback.value = "";
+    showInviteUserSuggestDropdown.value = false;
+  });
+
+  watch(
+    () => ({
+      dir: actorProfileDirectory.value,
+      ch: channel.value,
+      me: session.value?.actor,
+      blocked: joinBlocked.value,
+    }),
+    (s) => {
+      if (!s.me || !s.ch) return;
+      recordCoplayActors(session.value, s.ch, s.dir, s.blocked);
+      coplaySidebarTick.value++;
+    },
+    { immediate: true },
+  );
+
+  const coplayersForInviteSidebar = computed(() => {
+    void coplaySidebarTick.value;
+    return getCoplayActorsForSidebar(session.value, 15);
+  });
+
+  /** Short list for the Invite user dropdown (max 5 recent co-players). */
+  const coplayersForInviteDropdown = computed(() => {
+    void coplaySidebarTick.value;
+    return getCoplayActorsForSidebar(session.value, 5);
+  });
+
+  const inviteUserActorInput = ref("");
+  const invitePushBusy = ref(false);
+  const invitePushFeedback = ref("");
+  const showInviteUserSuggestDropdown = ref(false);
+  const inviteUserSuggestRoot = ref(null);
+  const inviteSectionExpanded = ref(true);
+
+  function toggleInviteSectionExpanded() {
+    inviteSectionExpanded.value = !inviteSectionExpanded.value;
+    if (!inviteSectionExpanded.value) showInviteUserSuggestDropdown.value = false;
+  }
+
+  function toggleInviteUserSuggestDropdown() {
+    if (!coplayersForInviteDropdown.value.length) return;
+    showInviteUserSuggestDropdown.value = !showInviteUserSuggestDropdown.value;
+  }
+
+  function selectInviteUserSuggestion(row) {
+    if (!row?.actorId) return;
+    inviteUserActorInput.value = row.actorId;
+    showInviteUserSuggestDropdown.value = false;
+  }
+
+  function onDocumentClickCloseInviteSuggest(ev) {
+    const root = inviteUserSuggestRoot.value;
+    if (!root || !showInviteUserSuggestDropdown.value) return;
+    if (root.contains(ev.target)) return;
+    showInviteUserSuggestDropdown.value = false;
+  }
+
+  const canSendInvitePush = computed(() => {
+    const normalized = normalizePartyupActorHandle(inviteUserActorInput.value);
+    const me = session.value?.actor ? String(session.value.actor).trim().toLowerCase() : "";
+    return Boolean(
+      normalized &&
+        channel.value &&
+        me &&
+        normalized !== me &&
+        !invitePushBusy.value,
+    );
+  });
+
   const visibleMessageObjects = computed(() => {
     const currentActor = session.value?.actor;
     return sortedMessageObjects.value.filter((messageObject) => {
@@ -1275,6 +1421,20 @@ function chatSetup(props) {
     nextTick(() => {
       const container = messageListEl.value;
       const sel = `[data-message-url="${escapeMessageUrlForSelector(messageObject.url)}"]`;
+      const el = container?.querySelector(sel);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.classList.add("message-search-flash");
+        window.setTimeout(() => el.classList.remove("message-search-flash"), 2400);
+      }
+    });
+  }
+
+  function jumpToMessageUrl(url) {
+    if (!url || typeof window === "undefined") return;
+    nextTick(() => {
+      const container = messageListEl.value;
+      const sel = `[data-message-url="${escapeMessageUrlForSelector(url)}"]`;
       const el = container?.querySelector(sel);
       if (el) {
         el.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -1451,6 +1611,7 @@ function chatSetup(props) {
       syncChatLayoutNarrow();
       chatLayoutMql.addEventListener("change", syncChatLayoutNarrow);
       window.addEventListener(PARTYUP_SCROLL_CHAT_TOP_EVENT, onScrollChatTopFromHeader);
+      window.addEventListener("click", onDocumentClickCloseInviteSuggest);
       playerActivityClockTimerId = window.setInterval(() => {
         playerActivityClock.value++;
       }, 30000);
@@ -1462,6 +1623,7 @@ function chatSetup(props) {
       chatLayoutMql?.removeEventListener("change", syncChatLayoutNarrow);
       chatLayoutMql = null;
       window.removeEventListener(PARTYUP_SCROLL_CHAT_TOP_EVENT, onScrollChatTopFromHeader);
+      window.removeEventListener("click", onDocumentClickCloseInviteSuggest);
       if (playerActivityClockTimerId != null) {
         window.clearInterval(playerActivityClockTimerId);
         playerActivityClockTimerId = null;
@@ -1587,6 +1749,27 @@ function chatSetup(props) {
     setPrivateDraftTarget(user.actor, user.name || "User");
   }
 
+  function beginReplyTo(messageObject) {
+    if (!messageObject?.url || isPartyupPresenceMessage(messageObject)) return;
+    const me = session.value?.actor;
+    if (!me) return;
+    const v = messageObject.value || {};
+    const rawContent = String(v.content || "").trim();
+    const preview = rawContent ? truncateReplyPreview(rawContent) : "(no text)";
+    replyDraftTarget.value = {
+      url: messageObject.url,
+      authorName: (v.profileName || "").trim() || "User",
+      preview,
+      pmRecipient: replyPrivateRecipient(messageObject, me),
+    };
+    showProfileMenu.value = false;
+    showPlayersDropdown.value = false;
+  }
+
+  function cancelReplyDraft() {
+    replyDraftTarget.value = null;
+  }
+
   function handleMessageInput() {
     const mentionData = extractPrivateMention(myMessage.value);
     if (!mentionData) {
@@ -1645,29 +1828,34 @@ function chatSetup(props) {
     if (!draftMessage) return;
     sendError.value = "";
 
-    const mentionData = extractPrivateMention(draftMessage);
+    const replyCtx = replyDraftTarget.value;
+
     let messageContent = draftMessage;
     let privateToActor = null;
     let privateToNickname = null;
-    if (mentionData) {
-      const resolvedActor =
-        privateMessageTarget.value?.name === mentionData.nickname
-          ? privateMessageTarget.value.actor
-          : profileNameToActorDirectory.value.get(mentionData.nickname.toLowerCase()) || null;
-      if (resolvedActor && resolvedActor !== session.value.actor) {
-        if (!participantActors.value.has(resolvedActor)) {
-          sendError.value = "That player is not in the chat right now.";
-          return;
+
+    if (replyCtx?.pmRecipient) {
+      privateToActor = replyCtx.pmRecipient.actor;
+      privateToNickname = replyCtx.pmRecipient.nickname;
+    } else {
+      const mentionData = extractPrivateMention(draftMessage);
+      if (mentionData) {
+        const resolvedActor =
+          privateMessageTarget.value?.name === mentionData.nickname
+            ? privateMessageTarget.value.actor
+            : profileNameToActorDirectory.value.get(mentionData.nickname.toLowerCase()) || null;
+        if (resolvedActor && resolvedActor !== session.value.actor) {
+          privateToActor = resolvedActor;
+          privateToNickname = mentionData.nickname;
+          messageContent = mentionData.body.trim();
+          if (!messageContent) return;
         }
-        privateToActor = resolvedActor;
-        privateToNickname = mentionData.nickname;
-        messageContent = mentionData.body.trim();
-        if (!messageContent) return;
-      } else {
-        privateToActor = null;
-        privateToNickname = null;
-        messageContent = draftMessage;
       }
+    }
+
+    if (privateToActor && !participantActors.value.has(privateToActor)) {
+      sendError.value = "That player is not in the chat right now.";
+      return;
     }
 
     isSending.value = true;
@@ -1686,6 +1874,11 @@ function chatSetup(props) {
       if (activeProfile.value?.avatar) messageValue.profileAvatar = activeProfile.value.avatar;
       if (privateToActor) messageValue.privateToActor = privateToActor;
       if (privateToNickname) messageValue.privateToNickname = privateToNickname;
+      if (replyCtx) {
+        messageValue.replyToUrl = replyCtx.url;
+        messageValue.replyToPreview = replyCtx.preview;
+        messageValue.replyToAuthorName = replyCtx.authorName;
+      }
 
       await graffiti.post(
         {
@@ -1696,6 +1889,7 @@ function chatSetup(props) {
       );
       myMessage.value = "";
       privateMessageTarget.value = null;
+      replyDraftTarget.value = null;
       pendingScrollAfterSend.value = true;
       scheduleScrollToBottomAfterSend();
       if (typeof window !== "undefined") {
@@ -1804,6 +1998,86 @@ function chatSetup(props) {
     }
   }
 
+  function formatActorIdShort(actorId) {
+    const s = String(actorId || "");
+    return s.length > 14 ? `${s.slice(0, 10)}…` : s || "—";
+  }
+
+  async function copyInviteWithCoplayer(row) {
+    const url = buildPartyupInviteLink(channel.value);
+    if (!url || !row?.actorId) return;
+    copyChatIdStatus.value = "";
+    const text = `${url}\n\n${String(row.displayName || "Player").trim()} — actor id:\n${row.actorId}`;
+    try {
+      await writeTextToClipboard(text);
+      copyChatIdStatus.value = "Invite + actor id copied";
+      window.setTimeout(() => {
+        if (copyChatIdStatus.value === "Invite + actor id copied") copyChatIdStatus.value = "";
+      }, 2400);
+    } catch {
+      copyChatIdStatus.value = "Copy failed";
+      window.setTimeout(() => {
+        if (copyChatIdStatus.value === "Copy failed") copyChatIdStatus.value = "";
+      }, 2500);
+    }
+  }
+
+  async function sendInvitePushToUser() {
+    invitePushFeedback.value = "";
+    const normalized = normalizePartyupActorHandle(inviteUserActorInput.value);
+    if (!normalized || !channel.value || !session.value?.actor) {
+      if (inviteUserActorInput.value.trim()) {
+        invitePushFeedback.value = "Use a Graffiti name (e.g. ash) or full handle (ash.graffiti.actor).";
+      }
+      return;
+    }
+    const me = String(session.value.actor).trim().toLowerCase();
+    if (normalized === me) {
+      invitePushFeedback.value = "You can’t invite yourself.";
+      return;
+    }
+    if (
+      bannedActorsEffective.value.some((id) => String(id).trim().toLowerCase() === normalized)
+    ) {
+      invitePushFeedback.value = "That player is banned from this chat.";
+      return;
+    }
+    invitePushBusy.value = true;
+    try {
+      const title =
+        effectiveChatTitle(chats.value, channel.value) ||
+        String(currentChat.value?.value?.title || "").trim() ||
+        "Chat";
+      await graffiti.post(
+        {
+          value: {
+            activity: "Invite",
+            type: "ChatInvite",
+            channel: channel.value,
+            inviteToActor: normalized,
+            chatTitle: title,
+            published: Date.now(),
+          },
+          channels: ["partyup-26"],
+        },
+        session.value,
+      );
+      invitePushFeedback.value = "Invite sent — they’ll see it on the Lobby.";
+      inviteUserActorInput.value = "";
+      showInviteUserSuggestDropdown.value = false;
+      window.setTimeout(() => {
+        if (invitePushFeedback.value === "Invite sent — they’ll see it on the Lobby.") {
+          invitePushFeedback.value = "";
+        }
+      }, 3200);
+    } catch (error) {
+      console.error(error);
+      invitePushFeedback.value = error?.message || "Could not send invite.";
+    } finally {
+      invitePushBusy.value = false;
+    }
+  }
+
   async function copyChatId() {
     const id = channel.value;
     if (!id) return;
@@ -1860,6 +2134,22 @@ function chatSetup(props) {
     joinBlocked,
     joinBlockedKind,
     inviteLockedEffective,
+    showSidebarInviteSection,
+    inviteSectionExpanded,
+    toggleInviteSectionExpanded,
+    coplayersForInviteSidebar,
+    coplayersForInviteDropdown,
+    inviteUserActorInput,
+    invitePushBusy,
+    invitePushFeedback,
+    showInviteUserSuggestDropdown,
+    inviteUserSuggestRoot,
+    toggleInviteUserSuggestDropdown,
+    selectInviteUserSuggestion,
+    canSendInvitePush,
+    sendInvitePushToUser,
+    formatActorIdShort,
+    copyInviteWithCoplayer,
     bannedActorsEffective,
     isChatCreator,
     settingsChatTitle,
@@ -1867,6 +2157,8 @@ function chatSetup(props) {
     settingsOtherGameDetail,
     settingsMaxPlayers,
     settingsInviteLocked,
+    settingsEnabledGameTools,
+    PARTYUP_GAME_TOOL_OPTIONS,
     settingsSaveError,
     showGameChangeWarning,
     saveGameSettings,
@@ -1876,9 +2168,10 @@ function chatSetup(props) {
     cancelGameSelectionChange,
     PARTYUP_GAME_OPTIONS,
     PARTYUP_DICE_OPTIONS,
-    showGameHelpDice,
-    showGameHelpCatan,
-    showGameHelpBotc,
+    showToolDice,
+    showToolCatan,
+    showToolBotc,
+    hasAnyGameTool,
     catanCountRoads,
     catanCountSettlements,
     catanCountCities,
@@ -1895,6 +2188,7 @@ function chatSetup(props) {
     leaveChat,
     showGameOverlay,
     showChatOverlay,
+    showToolOverlay,
     showRulebookViewer,
     rulebookViewerUrl,
     rulebookMissingGame,
@@ -1904,10 +2198,15 @@ function chatSetup(props) {
     showPlayersDropdown,
     openGameOverlay,
     openChatOverlay,
+    openToolOverlay,
     closeOverlays,
     togglePlayersDropdown,
     otherUsersInChat,
     privateMessageTarget,
+    replyDraftTarget,
+    cancelReplyDraft,
+    beginReplyTo,
+    jumpToMessageUrl,
     sendError,
     onProfileAvatarClick,
     onPlayerClick,

@@ -1,28 +1,59 @@
-<section class="profile-page chat-box">
-    <h2>Default Profile</h2>
-    <p class="profile-page-lead">
-        New chats start with this name and avatar. Add or switch between new profiles within each chat!
-    </p>
-    <form class="profile-page-form stack" @submit.prevent="saveProfile()">
-        <label class="inline-field profile-page-preview-label">
-            <span><b>Preview</b></span>
-            <UserAvatar
-                size="large"
-                :name="displayName.trim() || 'Me'"
-                :image-url="avatarUrl"
-            />
-        </label>
-        <label class="stack-label">
-            Display name
-            <input type="text" v-model="displayName" placeholder="How you appear in new chats" maxlength="80" />
-        </label>
-        <label class="stack-label">
-            Avatar image URL (optional)
-            <input type="text" v-model="avatarUrl" placeholder="https://..." />
-        </label>
-        <div class="profile-page-actions">
-            <button type="submit" :disabled="!canSave">Save</button>
-            <span v-if="savedHint" class="profile-page-saved">{{ savedHint }}</span>
-        </div>
-    </form>
+<section class="profile-page-layout">
+    <section class="profile-page chat-box">
+        <h2>Default Profile</h2>
+        <p class="profile-page-lead">
+            New chats start with this name and avatar. Add or switch between new profiles within each chat!
+        </p>
+        <form class="profile-page-form stack" @submit.prevent="saveProfile()">
+            <label class="inline-field profile-page-preview-label">
+                <span><b>Preview</b></span>
+                <UserAvatar
+                    size="large"
+                    :name="displayName.trim() || 'Me'"
+                    :image-url="avatarUrl"
+                />
+            </label>
+            <label class="stack-label">
+                Display name
+                <input type="text" v-model="displayName" placeholder="How you appear in new chats" maxlength="80" />
+            </label>
+            <label class="stack-label">
+                Avatar image URL (optional)
+                <input type="text" v-model="avatarUrl" placeholder="https://..." />
+            </label>
+            <div class="profile-page-actions">
+                <button type="submit" :disabled="!canSave">Save</button>
+                <span v-if="savedHint" class="profile-page-saved">{{ savedHint }}</span>
+            </div>
+        </form>
+    </section>
+
+    <section class="profile-color-palette chat-box">
+        <h2>Color Palette</h2>
+        <p class="profile-page-lead">
+            Change the background, header, and accent colors used for buttons and highlights. Make sure to save your 
+            changes below!
+        </p>
+        <form class="profile-page-form stack" @submit.prevent="saveColorPalette()">
+            <label class="stack-label profile-color-row">
+                <span>Background</span>
+                <input type="color" v-model="pageBg" @input="previewColorPalette" />
+            </label>
+            <label class="stack-label profile-color-row">
+                <span>Header</span>
+                <input type="color" v-model="headerBg" @input="previewColorPalette" />
+            </label>
+            <label class="stack-label profile-color-row">
+                <span>Buttons &amp; Accents</span>
+                <input type="color" v-model="accent" @input="previewColorPalette" />
+            </label>
+            <div class="profile-page-actions profile-color-palette-actions">
+                <div class="profile-palette-button-row">
+                    <button type="button" @click="resetColorPalette">Reset to Defaults</button>
+                    <button type="submit" :disabled="!canSave">Save</button>
+                </div>
+                <span v-if="paletteSavedHint" class="profile-page-saved">{{ paletteSavedHint }}</span>
+            </div>
+        </form>
+    </section>
 </section>

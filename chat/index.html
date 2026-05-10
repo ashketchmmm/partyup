@@ -52,26 +52,112 @@
         <aside v-if="!chatLayoutNarrow || chatSettingsExpanded" class="chat-settings">
             <h2 v-if="chatDisplayPrefs.showGame">Game: {{ currentChatGame }}</h2>
             <p v-if="chatDisplayPrefs.showMaxPlayers"><strong>Max Players:</strong> {{ currentChatPlayers }}</p>
-            <div v-if="isChatCreator || !inviteLockedEffective" class="sidebar-invite-block">
-                <button type="button" class="sidebar-copy-id sidebar-invite-btn" @click="copyInviteLink()">
-                    Copy invite link
-                </button>
-                <p v-if="copyChatIdStatus" class="sidebar-copy-id-status">{{ copyChatIdStatus }}</p>
-            </div>
-            <p v-else class="sidebar-hint-small sidebar-invite-locked-hint">
-                The host has locked the invite link. Ask them for access if you need to invite someone.
-            </p>
-            <div class="sidebar-actions">
+            <section v-if="showSidebarInviteSection" class="sidebar-invite-section">
                 <button
-                    v-if="isChatCreator"
                     type="button"
-                    @click="openGameOverlay()"
-                    class="sidebar_button"
+                    id="sidebar-invite-heading"
+                    class="sidebar-invite-disclosure"
+                    :class="{ 'sidebar-invite-disclosure--collapsed': !inviteSectionExpanded }"
+                    :aria-expanded="inviteSectionExpanded"
+                    aria-controls="sidebar-invite-panel"
+                    @click="toggleInviteSectionExpanded()"
                 >
-                    Chat ⚙️
+                    <span class="sidebar-invite-disclosure-title">Invite Users</span>
+                    <span class="sidebar-invite-disclosure-chevron" aria-hidden="true">▼</span>
                 </button>
-                <button type="button" @click="openChatOverlay()" class="sidebar_button">General 📜</button>
-                <button type="button" @click="togglePlayersDropdown()" class="sidebar_button">See Players</button>
+                <div
+                    id="sidebar-invite-panel"
+                    v-show="inviteSectionExpanded"
+                    class="sidebar-invite-panel"
+                >
+                <div class="sidebar-invite-actions-card">
+                    <button type="button" class="sidebar-copy-id sidebar-invite-btn" @click="copyInviteLink()">
+                        Copy invite link
+                    </button>
+                    <p v-if="copyChatIdStatus" class="sidebar-copy-id-status">{{ copyChatIdStatus }}</p>
+                    <div class="sidebar-invite-user-block">
+                        <label class="sidebar-invite-user-label" for="sidebar-invite-user-input">Invite By Name</label>
+                        <div class="sidebar-invite-user-row">
+                            <div ref="inviteUserSuggestRoot" class="sidebar-invite-user-input-col">
+                                <div class="sidebar-invite-user-input-row">
+                                    <input
+                                        id="sidebar-invite-user-input"
+                                        v-model="inviteUserActorInput"
+                                        type="text"
+                                        class="sidebar-invite-user-input"
+                                        placeholder="e.g. name or name.graffiti.actor"
+                                        maxlength="120"
+                                        autocomplete="off"
+                                        @keydown.enter.prevent="sendInvitePushToUser()"
+                                    />
+                                    <button
+                                        type="button"
+                                        class="sidebar-invite-user-suggest-toggle"
+                                        :disabled="!coplayersForInviteDropdown.length"
+                                        :class="{ 'sidebar-invite-user-suggest-toggle--open': showInviteUserSuggestDropdown }"
+                                        :aria-expanded="showInviteUserSuggestDropdown"
+                                        :aria-controls="'sidebar-invite-user-suggest-panel'"
+                                        title="Pick from recent co-players (up to 5)"
+                                        @click.stop="toggleInviteUserSuggestDropdown()"
+                                    >
+                                        <span class="sidebar-invite-user-suggest-chevron" aria-hidden="true">▼</span>
+                                    </button>
+                                </div>
+                                <div
+                                    v-show="showInviteUserSuggestDropdown && coplayersForInviteDropdown.length"
+                                    id="sidebar-invite-user-suggest-panel"
+                                    class="sidebar-invite-user-suggest-panel"
+                                    role="listbox"
+                                    aria-label="Suggested co-players"
+                                >
+                                    <button
+                                        v-for="row in coplayersForInviteDropdown"
+                                        :key="row.actorId"
+                                        type="button"
+                                        class="sidebar-invite-user-suggest-option"
+                                        role="option"
+                                        @click.stop="selectInviteUserSuggestion(row)"
+                                    >
+                                        <span class="sidebar-invite-user-suggest-name">{{ row.displayName }}</span>
+                                        <span class="sidebar-invite-user-suggest-id">{{ formatActorIdShort(row.actorId) }}</span>
+                                    </button>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                class="sidebar-invite-user-send"
+                                :disabled="!canSendInvitePush || invitePushBusy"
+                                @click="sendInvitePushToUser()"
+                            >
+                                {{ invitePushBusy ? "Sending…" : "Send" }}
+                            </button>
+                        </div>
+                        <p v-if="invitePushFeedback" class="sidebar-invite-user-feedback">{{ invitePushFeedback }}</p>
+                    </div>
+                </div>
+                </div>
+
+            </section>
+
+            <div class="sidebar-actions-wrap">
+                <div v-if="isChatCreator" class="sidebar-actions-grid">
+                    <button type="button" @click="openGameOverlay()" class="sidebar_button">
+                        Chat ⚙️
+                    </button>
+                    <button type="button" @click="openChatOverlay()" class="sidebar_button">General ⚙️</button>
+                    <button type="button" @click="openRulebook()" class="sidebar_button">Rulebook 📜</button>
+                    <button type="button" @click="openToolOverlay()" class="sidebar_button">Game Tools 🛠️</button>
+                </div>
+                <div v-else class="sidebar-actions-grid">
+                    <button type="button" @click="openChatOverlay()" class="sidebar_button sidebar-actions-span-2">
+                        General Settings
+                    </button>
+                    <button type="button" @click="openRulebook()" class="sidebar_button">Rulebook</button>
+                    <button type="button" @click="openToolOverlay()" class="sidebar_button">Tool</button>
+                </div>
+                <button type="button" class="sidebar_button sidebar-actions-see-players" @click="togglePlayersDropdown()">
+                    See Players
+                </button>
             </div>
             <div v-if="showPlayersDropdown" class="players-dropdown">
                 <p><strong>Players</strong></p>
@@ -229,21 +315,45 @@
                             </div>
                         </template>
                         <template v-else>
-                            <div class="message-row">
-                                <UserAvatar
-                                    :name="row.object.value.profileName || 'User'"
-                                    :image-url="row.object.value.profileAvatar"
-                                    :clickable="row.object.actor !== $graffitiSession.value?.actor"
-                                    @click="onProfileAvatarClick(row.object)"
-                                />
-                                <div class="message-body">
-                                    <strong class="message-name">
-                                        {{ row.object.value.profileName || 'Unknown user' }}
-                                    </strong>
-                                    <p class="message-text">{{ row.object.value.content }}</p>
-                                    <small v-if="row.object.value.privateToActor" class="pm-tag">
-                                        Private message to {{ row.object.value.privateToNickname }}
-                                    </small>
+                            <div class="message-cluster">
+                                <div class="message-row">
+                                    <UserAvatar
+                                        :name="row.object.value.profileName || 'User'"
+                                        :image-url="row.object.value.profileAvatar"
+                                        :clickable="row.object.actor !== $graffitiSession.value?.actor"
+                                        @click="onProfileAvatarClick(row.object)"
+                                    />
+                                    <div class="message-body">
+                                        <strong class="message-name">
+                                            {{ row.object.value.profileName || 'Unknown user' }}
+                                        </strong>
+                                        <button
+                                            v-if="row.object.value.replyToUrl"
+                                            type="button"
+                                            class="message-reply-quote"
+                                            @click.stop="jumpToMessageUrl(row.object.value.replyToUrl)"
+                                        >
+                                            <span class="message-reply-quote-author">{{
+                                                row.object.value.replyToAuthorName || 'Message'
+                                            }}</span>
+                                            <span class="message-reply-quote-snippet">{{
+                                                row.object.value.replyToPreview || '…'
+                                            }}</span>
+                                        </button>
+                                        <p class="message-text">{{ row.object.value.content }}</p>
+                                        <small v-if="row.object.value.privateToActor" class="pm-tag">
+                                            Private message to {{ row.object.value.privateToNickname }}
+                                        </small>
+                                    </div>
+                                </div>
+                                <div class="message-inline-actions">
+                                    <button
+                                        type="button"
+                                        class="message-reply-btn"
+                                        @click="beginReplyTo(row.object)"
+                                    >
+                                        Reply
+                                    </button>
                                 </div>
                             </div>
                             <button
@@ -323,6 +433,14 @@
                     }}</span>
                 </button>
             </form>
+            <p v-if="replyDraftTarget" class="reply-draft-indicator">
+                Replying to <strong>{{ replyDraftTarget.authorName }}</strong>
+                <template v-if="replyDraftTarget.pmRecipient">
+                    — private message to <strong>{{ replyDraftTarget.pmRecipient.nickname }}</strong>
+                </template>
+                .
+                <button type="button" class="reply-draft-cancel" @click="cancelReplyDraft()">Cancel</button>
+            </p>
             <p v-if="privateMessageTarget" class="pm-draft-indicator">
                 Sending privately to <strong>{{ privateMessageTarget.name }}</strong>. Remove
                 <code>@[{{ privateMessageTarget.name }}]</code> to cancel.
@@ -380,9 +498,23 @@
                     Maximum is <strong>{{ PARTYUP_MAX_PLAYERS }}</strong>.
                 </p>
                 <label class="overlay-checkbox-label">
-                    <span>Hide invite link</span>
+                    <span>Hide invite</span>
                     <input type="checkbox" v-model="settingsInviteLocked" />
                 </label>
+                <fieldset class="chat-display-prefs-fieldset overlay-game-tools-settings-fieldset">
+                    <legend>Game tools</legend>
+                    <p class="overlay-hint chat-display-prefs-lead">
+                        Choose what appears in <strong>Game Tools</strong> for everyone.
+                    </p>
+                    <label
+                        v-for="opt in PARTYUP_GAME_TOOL_OPTIONS"
+                        :key="opt.id"
+                        class="overlay-checkbox-label overlay-game-tool-setting-row"
+                    >
+                        <input type="checkbox" :value="opt.id" v-model="settingsEnabledGameTools" />
+                        <span>{{ opt.label }}</span>
+                    </label>
+                </fieldset>
                 <p v-if="settingsSaveError" class="send-error">{{ settingsSaveError }}</p>
                 <div class="overlay-actions">
                     <button type="submit">Save</button>
@@ -436,7 +568,7 @@
     </div>
     <div v-if="showChatOverlay" class="overlay-backdrop" @click.self="closeOverlays()">
         <section class="overlay-card overlay-card-wide">
-            <h3>General Tools</h3>
+            <h3>General Settings</h3>
             <fieldset class="chat-display-prefs-fieldset">
                 <legend>Chat Info</legend>
                 <p class="overlay-hint chat-display-prefs-lead">
@@ -455,12 +587,83 @@
                     <span>Players online</span>
                 </label>
             </fieldset>
+            <fieldset class="chat-display-prefs-fieldset overlay-chat-search-fieldset">
+                <legend>Search Messages</legend>
+                <p class="overlay-hint chat-display-prefs-lead overlay-chat-search-hint">
+                    Search messages with keywords. Add
+                    <code>@[name]</code>
+                    to filter by sender.
+                </p>
+                <div class="chat-search-input-wrap">
+                    <input
+                        id="chat-search-input"
+                        ref="chatSearchInputEl"
+                        v-model="chatSearchQuery"
+                        type="search"
+                        class="overlay-text-input chat-search-field"
+                        placeholder="Ex. @[DM] last session"
+                        autocomplete="off"
+                        autocorrect="off"
+                        spellcheck="false"
+                        @input="onChatSearchInput"
+                        @click="onChatSearchSelect"
+                        @keyup="onChatSearchKeydown"
+                    />
+                    <ul
+                        v-if="chatSearchMentionSuggestions.length"
+                        class="chat-search-suggestions"
+                        role="listbox"
+                    >
+                        <li v-for="u of chatSearchMentionSuggestions" :key="u.actor" role="option">
+                            <button
+                                type="button"
+                                class="chat-search-suggestion-btn"
+                                @mousedown.prevent="applyChatSearchUserSuggestion(u)"
+                            >
+                                <UserAvatar size="small" :name="u.name" :image-url="u.avatar || ''" />
+                                <span>{{ u.name }}</span>
+                            </button>
+                        </li>
+                    </ul>
+                </div>
+                <div v-if="chatSearchQuery.trim()" class="overlay-chat-search-results">
+                    <p v-if="!chatSearchResults.length" class="overlay-chat-search-empty">
+                        No messages match this search.
+                    </p>
+                    <ul v-else class="overlay-chat-search-result-list">
+                        <li v-for="msg of chatSearchResults" :key="msg.url">
+                            <button
+                                type="button"
+                                class="overlay-chat-search-hit"
+                                @click="scrollToChatSearchResult(msg)"
+                            >
+                                <span class="overlay-chat-search-hit-meta">
+                                    <strong>{{ msg.value.profileName || 'User' }}</strong>
+                                    <span class="overlay-chat-search-hit-time">{{
+                                        formatMessageSearchTime(msg.value.published)
+                                    }}</span>
+                                </span>
+                                <span class="overlay-chat-search-hit-snippet">{{
+                                    formatChatSearchSnippet(msg.value.content)
+                                }}</span>
+                            </button>
+                        </li>
+                    </ul>
+                </div>
+            </fieldset>
+            <button type="button" @click="closeOverlays()">Close</button>
+        </section>
+    </div>
+    <div v-if="showToolOverlay" class="overlay-backdrop" @click.self="closeOverlays()">
+        <section class="overlay-card overlay-card-wide">
+            <h3>Game Tools</h3>
             <fieldset class="chat-display-prefs-fieldset overlay-game-help-fieldset">
                 <legend>Game Help</legend>
-                <button type="button" class="overlay-open-rulebook" @click="openRulebook()">
-                    Open Rulebook
-                </button>
-                <div v-if="showGameHelpDice" class="game-help-dice-row">
+                <p v-if="!hasAnyGameTool" class="overlay-hint">
+                    No game tools are enabled for this chat. The owner can turn them on in
+                    <strong>Chat ⚙️ → Game tools</strong>.
+                </p>
+                <div v-if="showToolDice" class="game-help-dice-row">
                     <label class="game-help-dice-label">
                         <span class="game-help-dice-label-text">Roll a Die</span>
                         <select v-model.number="selectedDiceSides" class="overlay-select game-help-dice-select">
@@ -478,10 +681,10 @@
                         {{ isRollingDice ? 'Rolling…' : 'Roll' }}
                     </button>
                 </div>
-                <p v-if="showGameHelpDice" class="overlay-hint game-help-dice-hint">
+                <p v-if="showToolDice" class="overlay-hint game-help-dice-hint">
                     Result is sent to you as a private message.
                 </p>
-                <div v-if="showGameHelpCatan" class="game-help-catan">
+                <div v-if="showToolCatan" class="game-help-catan">
                     <p class="game-help-tool-title">Your Catan Pieces</p>
                     <ul class="game-help-catan-list" role="list">
                         <li class="game-help-catan-row">
@@ -576,7 +779,7 @@
                         </li>
                     </ul>
                 </div>
-                <div v-if="showGameHelpBotc" class="game-help-botc">
+                <div v-if="showToolBotc" class="game-help-botc">
                     <label class="game-help-botc-select-wrap stack-label">
                         <span class="game-help-tool-title">Your role</span>
                         <select v-model="selectedBotcRoleId" class="overlay-select game-help-botc-select">
@@ -593,70 +796,6 @@
                         </p>
                         <p class="game-help-botc-blurb">{{ selectedBotcRoleDetail.blurb }}</p>
                     </div>
-                </div>
-            </fieldset>
-            <fieldset class="chat-display-prefs-fieldset overlay-chat-search-fieldset">
-                <legend>Search Messages</legend>
-                <p class="overlay-hint chat-display-prefs-lead overlay-chat-search-hint">
-                    Search messages with keywords. Add
-                    <code>@[name]</code>
-                    to filter by sender.
-                </p>
-                <div class="chat-search-input-wrap">
-                    <input
-                        id="chat-search-input"
-                        ref="chatSearchInputEl"
-                        v-model="chatSearchQuery"
-                        type="search"
-                        class="overlay-text-input chat-search-field"
-                        placeholder="Ex. @[DM] last session"
-                        autocomplete="off"
-                        autocorrect="off"
-                        spellcheck="false"
-                        @input="onChatSearchInput"
-                        @click="onChatSearchSelect"
-                        @keyup="onChatSearchKeydown"
-                    />
-                    <ul
-                        v-if="chatSearchMentionSuggestions.length"
-                        class="chat-search-suggestions"
-                        role="listbox"
-                    >
-                        <li v-for="u of chatSearchMentionSuggestions" :key="u.actor" role="option">
-                            <button
-                                type="button"
-                                class="chat-search-suggestion-btn"
-                                @mousedown.prevent="applyChatSearchUserSuggestion(u)"
-                            >
-                                <UserAvatar size="small" :name="u.name" :image-url="u.avatar || ''" />
-                                <span>{{ u.name }}</span>
-                            </button>
-                        </li>
-                    </ul>
-                </div>
-                <div v-if="chatSearchQuery.trim()" class="overlay-chat-search-results">
-                    <p v-if="!chatSearchResults.length" class="overlay-chat-search-empty">
-                        No messages match this search.
-                    </p>
-                    <ul v-else class="overlay-chat-search-result-list">
-                        <li v-for="msg of chatSearchResults" :key="msg.url">
-                            <button
-                                type="button"
-                                class="overlay-chat-search-hit"
-                                @click="scrollToChatSearchResult(msg)"
-                            >
-                                <span class="overlay-chat-search-hit-meta">
-                                    <strong>{{ msg.value.profileName || 'User' }}</strong>
-                                    <span class="overlay-chat-search-hit-time">{{
-                                        formatMessageSearchTime(msg.value.published)
-                                    }}</span>
-                                </span>
-                                <span class="overlay-chat-search-hit-snippet">{{
-                                    formatChatSearchSnippet(msg.value.content)
-                                }}</span>
-                            </button>
-                        </li>
-                    </ul>
                 </div>
             </fieldset>
             <button type="button" @click="closeOverlays()">Close</button>
