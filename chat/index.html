@@ -40,7 +40,9 @@
             @click="chatSettingsExpanded = !chatSettingsExpanded"
         >
             <span class="chat-settings-mobile-toggle-text">
-                <span class="chat-settings-mobile-toggle-title">Chat Info</span>
+                <span class="chat-settings-mobile-toggle-title">{{
+                    showSpectatorChrome ? 'Spectating' : 'Chat Info'
+                }}</span>
                 <span v-if="chatDisplayPrefs.showGame" class="chat-settings-mobile-toggle-game">{{
                     currentChatGame
                 }}</span>
@@ -49,7 +51,39 @@
                 chatSettingsExpanded ? '▼' : '▶'
             }}</span>
         </button>
-        <aside v-if="!chatLayoutNarrow || chatSettingsExpanded" class="chat-settings">
+        <aside
+            v-if="!chatLayoutNarrow || chatSettingsExpanded"
+            class="chat-settings"
+            :class="{ 'chat-settings--spectator': showSpectatorChrome }"
+        >
+            <template v-if="showSpectatorChrome">
+                <p v-if="areMessageObjectsLoading" class="sidebar-hint-small sidebar-spectator-loading-hint">
+                    <em>Loading room…</em>
+                </p>
+                <p class="sidebar-spectator-banner">Spectator Mode</p>
+                <p v-if="chatDisplayPrefs.showGame" class="sidebar-hint-small">
+                    <strong>Game:</strong> {{ currentChatGame }}
+                </p>
+                <p v-if="chatDisplayPrefs.showMaxPlayers" class="sidebar-hint-small">
+                    <strong>Players in room:</strong> {{ participantCount }} / {{ currentChatPlayers }}
+                </p>
+                <button
+                    type="button"
+                    class="sidebar-join-as-player-btn"
+                    :disabled="!canJoinAsPlayerFromSpectator"
+                    @click="joinChatAsPlayerFromSpectator()"
+                >
+                    {{ joinAsPlayerBusy ? 'Joining…' : 'Join as Player' }}
+                </button>
+                <p
+                    v-if="participantCount >= currentChatPlayers && !joinAsPlayerBusy"
+                    class="sidebar-hint-small sidebar-spectator-slot-hint"
+                >
+                    No open player slots. This unlocks when someone leaves.
+                </p>
+                <button type="button" class="leave-chat" @click="leaveChat()">Back to Lobby</button>
+            </template>
+            <template v-else>
             <h2 v-if="chatDisplayPrefs.showGame">Game: {{ currentChatGame }}</h2>
             <p v-if="chatDisplayPrefs.showMaxPlayers"><strong>Max Players:</strong> {{ currentChatPlayers }}</p>
             <section v-if="showSidebarInviteSection" class="sidebar-invite-section">
@@ -249,17 +283,20 @@
                         <b>Warning</b>: This chat will be deleted for everyone permanently.
                     </p>
                 </template>
-                <button type="button" class="sidebar-forget-chat" @click="forgetChatPermanently()">
-                    Leave Chat
-                </button>
-                <p class="sidebar-hint-small">
-                    You can rejoin again from Public Chats or with an
-                    invite link.
-                </p>
+                <template v-if="!isChatCreator">
+                    <button type="button" class="sidebar-forget-chat" @click="forgetChatPermanently()">
+                        Leave Chat
+                    </button>
+                    <p class="sidebar-hint-small">
+                        You can rejoin again from Public Chats or with an
+                        invite link.
+                    </p>
+                    <p v-if="forgetChatError" class="send-error">{{ forgetChatError }}</p>
+                </template>
                 <p v-if="deleteChatError" class="send-error">{{ deleteChatError }}</p>
-                <p v-if="forgetChatError" class="send-error">{{ forgetChatError }}</p>
             </div>
             <button type="button" class="leave-chat" @click="leaveChat()">Back to Lobby</button>
+            </template>
         </aside>
 
         <section class="chat-window">
@@ -320,7 +357,11 @@
                                     <UserAvatar
                                         :name="row.object.value.profileName || 'User'"
                                         :image-url="row.object.value.profileAvatar"
-                                        :clickable="row.object.actor !== $graffitiSession.value?.actor"
+                                        :clickable="
+                                            !showSpectatorChrome &&
+                                            !areMessageObjectsLoading &&
+                                            row.object.actor !== $graffitiSession.value?.actor
+                                        "
                                         @click="onProfileAvatarClick(row.object)"
                                     />
                                     <div class="message-body">
@@ -346,7 +387,10 @@
                                         </small>
                                     </div>
                                 </div>
-                                <div class="message-inline-actions">
+                                <div
+                                    v-if="!showSpectatorChrome && !areMessageObjectsLoading"
+                                    class="message-inline-actions"
+                                >
                                     <button
                                         type="button"
                                         class="message-reply-btn"
@@ -357,7 +401,11 @@
                                 </div>
                             </div>
                             <button
-                                v-if="row.object.actor === $graffitiSession.value?.actor"
+                                v-if="
+                                    !showSpectatorChrome &&
+                                    !areMessageObjectsLoading &&
+                                    row.object.actor === $graffitiSession.value?.actor
+                                "
                                 type="button"
                                 @click="deleteMessage(row.object)"
                                 :disabled="isDeleting.has(row.object.url)"
@@ -370,7 +418,11 @@
                 </ul>
             </div>
 
-            <form @submit.prevent="attemptSendMessage()" class="message-composer">
+            <form
+                v-if="!showSpectatorChrome && !areMessageObjectsLoading"
+                @submit.prevent="attemptSendMessage()"
+                class="message-composer"
+            >
                 <div class="profile-menu-anchor">
                     <button type="button" class="profile-toggle" @click="toggleProfileMenu()">
                         <UserAvatar
@@ -433,7 +485,10 @@
                     }}</span>
                 </button>
             </form>
-            <p v-if="replyDraftTarget" class="reply-draft-indicator">
+            <p
+                v-if="!showSpectatorChrome && !areMessageObjectsLoading && replyDraftTarget"
+                class="reply-draft-indicator"
+            >
                 Replying to <strong>{{ replyDraftTarget.authorName }}</strong>
                 <template v-if="replyDraftTarget.pmRecipient">
                     — private message to <strong>{{ replyDraftTarget.pmRecipient.nickname }}</strong>
@@ -441,7 +496,10 @@
                 .
                 <button type="button" class="reply-draft-cancel" @click="cancelReplyDraft()">Cancel</button>
             </p>
-            <p v-if="privateMessageTarget" class="pm-draft-indicator">
+            <p
+                v-if="!showSpectatorChrome && !areMessageObjectsLoading && privateMessageTarget"
+                class="pm-draft-indicator"
+            >
                 Sending privately to <strong>{{ privateMessageTarget.name }}</strong>. Remove
                 <code>@[{{ privateMessageTarget.name }}]</code> to cancel.
             </p>
@@ -500,6 +558,10 @@
                 <label class="overlay-checkbox-label">
                     <span>Hide invite</span>
                     <input type="checkbox" v-model="settingsInviteLocked" />
+                </label>
+                <label class="overlay-checkbox-label">
+                    <span>Enable Spectating</span>
+                    <input type="checkbox" v-model="settingsSpectatingEnabled" />
                 </label>
                 <fieldset class="chat-display-prefs-fieldset overlay-game-tools-settings-fieldset">
                     <legend>Game tools</legend>

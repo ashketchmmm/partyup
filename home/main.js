@@ -17,7 +17,11 @@ import {
   isPushInviteChannelDismissed,
   loadDismissedPushInviteChannels,
 } from "../shared/pending-invites.js";
-import { PARTYUP_INVITE_PUSH_SCHEMA } from "../shared/partyup-invite-push.js";
+import {
+  PARTYUP_INVITE_PUSH_SCHEMA,
+  normalizeInviteToActorId,
+  sessionActorIdForInvites,
+} from "../shared/partyup-invite-push.js";
 import {
   PARTYUP_GAME_OPTIONS,
   PARTYUP_MAX_PLAYERS,
@@ -25,6 +29,9 @@ import {
   effectiveMaxPlayers,
   effectiveChatTitle,
   effectiveGame,
+  effectiveSpectatingEnabled,
+  presentParticipantActorSet,
+  effectiveBannedActors,
   clampPlayerCap,
 } from "../shared/chat-meta.js";
 import { extractChatIdFromInviteInput } from "../shared/chat-invite.js";
@@ -139,6 +146,7 @@ function setup() {
           private: { type: "boolean" },
           published: { type: "number" },
           inviteLocked: { type: "boolean" },
+          spectatingEnabled: { type: "boolean" },
           enabledGameTools: { type: "array", items: { type: "string" } },
           bannedActors: { type: "array", items: { type: "string" } },
           kickTimestamps: { type: "object" },
@@ -157,37 +165,71 @@ function setup() {
     PARTYUP_INVITE_PUSH_SCHEMA,
   );
 
+  /** Stable digest so new invite objects reliably trigger ingest (discover arrays may mutate in place). */
+  const invitePushIngestFingerprint = computed(() =>
+    invitePushObjects.value
+      .map((o) => {
+        const v = o.value;
+        if (!v || v.activity !== "Invite" || v.type !== "ChatInvite") return "";
+        return `${String(o.url || "")}|${String(v.channel || "")}|${String(v.inviteToActor || "")}|${Number(v.published) || 0}`;
+      })
+      .filter(Boolean)
+      .sort()
+      .join("\n"),
+  );
+
   watch(
-    () => invitePushObjects.value,
+    () => [invitePushIngestFingerprint.value, session.value?.actor],
     () => {
-      const me = session.value?.actor;
-      if (!me) return;
-      const meNorm = String(me).trim().toLowerCase();
+      const meId = sessionActorIdForInvites(session.value);
+      if (!meId) return;
+      let added = false;
       for (const o of invitePushObjects.value) {
         const v = o.value;
         if (!v || v.activity !== "Invite" || v.type !== "ChatInvite") continue;
-        const target = String(v.inviteToActor || "").trim().toLowerCase();
-        if (target !== meNorm) continue;
+        const targetId = normalizeInviteToActorId(v.inviteToActor);
+        if (!targetId || targetId !== meId) continue;
         const cid = String(v.channel || "").trim();
         if (!isValidChatChannelId(cid)) continue;
         if (isPushInviteChannelDismissed(allDismissedPushInvites.value, session.value, cid)) continue;
         const known = getCurrentUserKnownChats(allKnownChats.value, session.value);
         if (known.some((c) => c.channel === cid)) continue;
-        addPendingInvite(allPendingInvites.value, session.value, cid);
+        addPendingInvite(allPendingInvites.value, session.value, cid, {
+          chatTitle: String(v.chatTitle || "").trim(),
+        });
+        added = true;
+      }
+      if (added) {
+        allPendingInvites.value = loadAllPendingInvites();
       }
     },
-    { deep: true, immediate: true },
+    { immediate: true },
   );
 
   const pendingInvitesDisplay = computed(() => {
+    const meId = sessionActorIdForInvites(session.value);
     const list = getPendingInvitesForUser(allPendingInvites.value, session.value);
-    return list.map((p) => ({
-      ...p,
-      title:
-        effectiveChatTitle(chats.value, p.channel) ||
-        lookupKnownChatTitle(session.value, p.channel) ||
-        "Chat invitation",
-    }));
+    return list.map((p) => {
+      let fromPush = String(p.inviteTitle || "").trim();
+      if (!fromPush && meId) {
+        for (const o of invitePushObjects.value) {
+          const v = o.value;
+          if (!v || v.activity !== "Invite" || v.type !== "ChatInvite") continue;
+          if (String(v.channel || "").trim() !== p.channel) continue;
+          if (normalizeInviteToActorId(v.inviteToActor) !== meId) continue;
+          fromPush = String(v.chatTitle || "").trim();
+          if (fromPush) break;
+        }
+      }
+      return {
+        ...p,
+        title:
+          fromPush ||
+          effectiveChatTitle(chats.value, p.channel) ||
+          lookupKnownChatTitle(session.value, p.channel) ||
+          "Chat invitation",
+      };
+    });
   });
 
   const joinedChatsList = computed(() => {
@@ -222,6 +264,7 @@ function setup() {
     globalChats.value.map((c) => c.value.channel).filter((id) => Boolean(id && String(id).trim())),
   );
 
+  /** Match chat message schema enough that join/leave pings validate (needed for accurate lobby occupancy). */
   const messagePresenceSchema = {
     properties: {
       value: {
@@ -229,6 +272,16 @@ function setup() {
         properties: {
           content: { type: "string" },
           published: { type: "number" },
+          partyupLeave: { type: "boolean" },
+          partyupJoin: { type: "boolean" },
+          profileId: { type: "string" },
+          profileName: { type: "string" },
+          profileAvatar: { type: "string" },
+          privateToActor: { type: "string" },
+          privateToNickname: { type: "string" },
+          replyToUrl: { type: "string" },
+          replyToPreview: { type: "string" },
+          replyToAuthorName: { type: "string" },
         },
       },
     },
@@ -247,18 +300,25 @@ function setup() {
     { flush: "post" },
   );
 
+  function normalizePartyupActor(actor) {
+    if (actor == null) return "";
+    return String(actor).trim();
+  }
+
   const globalChatOccupancy = computed(() => {
     const occ = new Map();
     for (const chat of globalChats.value) {
       const cid = chat.value.channel;
       if (!cid) continue;
-      occ.set(cid, new Set());
-      if (chat.actor) occ.get(cid).add(chat.actor);
-    }
-    for (const m of globalPresenceMessages.value) {
-      const cid = m.channels?.[0];
-      if (!cid || !occ.has(cid)) continue;
-      if (m.actor) occ.get(cid).add(m.actor);
+      const msgs = globalPresenceMessages.value.filter((m) => m.channels?.[0] === cid);
+      const rawPresent = presentParticipantActorSet(chat, msgs);
+      const banned = new Set(effectiveBannedActors(chats.value, cid));
+      const normalized = new Set();
+      for (const a of rawPresent) {
+        const id = normalizePartyupActor(a);
+        if (id && !banned.has(id)) normalized.add(id);
+      }
+      occ.set(cid, normalized);
     }
     return occ;
   });
@@ -281,6 +341,25 @@ function setup() {
   }
 
   /** Parenthetical segment: (owner, game label, full) — comma-separated, lowercase status tokens where noted. */
+  function isGlobalChatClosedToJoin(chat) {
+    const cid = chat?.value?.channel;
+    if (!cid) return false;
+    return isGlobalChatFull(chat) && !effectiveSpectatingEnabled(chats.value, cid);
+  }
+
+  function globalChatDisplayTitleWithSpectating(chat) {
+    const base = globalChatDisplayTitleBase(chat);
+    const cid = String(chat?.value?.channel || "").trim();
+    const me = session.value?.actor;
+    if (!cid || !me || !effectiveSpectatingEnabled(chats.value, cid)) return base;
+    if (!isGlobalChatFull(chat)) return base;
+    const meId = normalizePartyupActor(me);
+    if (meId && globalChatOccupancy.value.get(cid)?.has(meId)) return base;
+    const row = knownChats.value.find((c) => c.channel === cid);
+    if (row?.spectator) return base;
+    return `${base} [Spectating Enabled]`;
+  }
+
   function globalChatPublicMetaSuffix(chat) {
     const cid = String(chat?.value?.channel || "").trim();
     const parts = [];
@@ -341,6 +420,7 @@ function setup() {
             game: resolvedGame,
             private: chatPrivacy.value,
             published: Date.now(),
+            spectatingEnabled: false,
             enabledGameTools: [...defaultEnabledGameToolsForGame(resolvedGame)],
           },
           channels: ["partyup-26"],
@@ -366,7 +446,7 @@ function setup() {
   }
 
   function changeChat(chat) {
-    if (isGlobalChatFull(chat)) return;
+    if (isGlobalChatClosedToJoin(chat)) return;
     addKnownChat({
       channel: chat.value.channel,
       title: chat.value.title,
@@ -385,6 +465,7 @@ function setup() {
     if (!id || !session.value) return;
     clearDismissedPushInviteChannel(allDismissedPushInvites.value, session.value, id);
     removePendingInvite(allPendingInvites.value, session.value, id);
+    allPendingInvites.value = loadAllPendingInvites();
     persistKnownChat(allKnownChats.value, session.value, {
       channel: id,
       title:
@@ -392,6 +473,7 @@ function setup() {
           ? inv.title
           : lookupKnownChatTitle(session.value, id) || "Known Chat",
     });
+    allKnownChats.value = loadAllKnownChats();
     goToChat(id);
   }
 
@@ -400,6 +482,7 @@ function setup() {
     if (!id || !session.value) return;
     dismissPushInviteChannel(allDismissedPushInvites.value, session.value, id);
     removePendingInvite(allPendingInvites.value, session.value, id);
+    allPendingInvites.value = loadAllPendingInvites();
   }
 
   function joinKnownChat() {
@@ -441,7 +524,9 @@ function setup() {
     PARTYUP_GAME_OPTIONS,
     PARTYUP_MAX_PLAYERS,
     isGlobalChatFull,
+    isGlobalChatClosedToJoin,
     globalChatDisplayTitleBase,
+    globalChatDisplayTitleWithSpectating,
     globalChatPublicMetaSuffix,
     isOwnedChatChannel,
     isOwnedGlobalChat,

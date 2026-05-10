@@ -28,14 +28,24 @@ export function getPendingInvitesForUser(map, session) {
   return Array.isArray(arr) ? [...arr] : [];
 }
 
-export function addPendingInvite(map, session, channelId) {
+export function addPendingInvite(map, session, channelId, options = {}) {
   const id = String(channelId ?? "").trim();
   const owner = getKnownChatsOwnerKey(session);
   if (!owner || !id) return;
   if (!Array.isArray(map[owner])) map[owner] = [];
   const list = map[owner];
-  if (list.some((x) => x.channel === id)) return;
-  list.unshift({ channel: id, invitedAt: Date.now() });
+  const titleFromInvite = String(options.chatTitle ?? options.inviteTitle ?? "").trim();
+  const idx = list.findIndex((x) => x.channel === id);
+  if (idx >= 0) {
+    if (titleFromInvite) {
+      list[idx] = { ...list[idx], inviteTitle: titleFromInvite };
+      saveAllPendingInvites(map);
+    }
+    return;
+  }
+  const row = { channel: id, invitedAt: Date.now() };
+  if (titleFromInvite) row.inviteTitle = titleFromInvite;
+  list.unshift(row);
   saveAllPendingInvites(map);
 }
 

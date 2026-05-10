@@ -24,7 +24,16 @@ export function saveAllKnownChats(allKnownChats) {
 export function getKnownChatsOwnerKey(session) {
   if (!session) return null;
   const raw = session.actor;
-  if (typeof raw === "string" && raw.length > 0) return raw;
+  if (typeof raw === "string") {
+    const s = raw.trim();
+    return s.length > 0 ? s : null;
+  }
+  if (raw != null && typeof raw === "object") {
+    for (const k of ["id", "actor", "handle", "username"]) {
+      const v = raw[k];
+      if (typeof v === "string" && v.trim()) return v.trim();
+    }
+  }
   if (raw != null && typeof raw !== "object") {
     const s = String(raw).trim();
     return s.length > 0 ? s : null;
@@ -66,23 +75,48 @@ export function addKnownChat(allKnownChats, session, chatInfo) {
   }
   const userKnownChats = allKnownChats[ownerKey];
   const existingIndex = userKnownChats.findIndex((chat) => chat.channel === chatChannel);
+  const prev = existingIndex >= 0 ? userKnownChats[existingIndex] : null;
   const nextChat = {
     channel: chatChannel,
-    title: chatInfo.title?.trim() || "Known Chat",
-    players: typeof chatInfo.players === "number" ? chatInfo.players : null,
+    title:
+      chatInfo.title?.trim() ||
+      (prev?.title && String(prev.title).trim()) ||
+      "Known Chat",
+    players:
+      typeof chatInfo.players === "number"
+        ? chatInfo.players
+        : prev && typeof prev.players === "number"
+          ? prev.players
+          : null,
     ...(chatInfo.game != null && String(chatInfo.game).trim()
       ? { game: String(chatInfo.game).trim() }
-      : {}),
+      : prev?.game != null && String(prev.game).trim()
+        ? { game: String(prev.game).trim() }
+        : {}),
   };
+  if (chatInfo.spectator !== undefined) {
+    if (chatInfo.spectator) nextChat.spectator = true;
+  } else if (prev?.spectator) {
+    nextChat.spectator = true;
+  }
   if (existingIndex >= 0) {
-    userKnownChats[existingIndex] = {
-      ...userKnownChats[existingIndex],
-      ...nextChat,
-    };
+    const merged = { ...userKnownChats[existingIndex], ...nextChat };
+    if (chatInfo.spectator !== undefined && !chatInfo.spectator) delete merged.spectator;
+    userKnownChats[existingIndex] = merged;
   } else {
     userKnownChats.unshift(nextChat);
   }
   saveAllKnownChats(allKnownChats);
+}
+
+/** Whether this chat is bookmarked as spectator-only until "Join as Player". */
+export function lookupKnownChatSpectator(session, channelId) {
+  const id = String(channelId ?? "").trim();
+  if (!id) return false;
+  const all = loadAllKnownChats();
+  const list = getCurrentUserKnownChats(all, session);
+  const hit = list.find((c) => c.channel === id);
+  return Boolean(hit?.spectator);
 }
 
 export function lookupKnownChatTitle(session, channelId) {

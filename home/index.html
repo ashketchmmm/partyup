@@ -13,27 +13,23 @@
                             :key="'pending-' + inv.channel"
                             class="chat-item chat-item-pending-invite"
                         >
-                            <span class="chat-pending-title">{{ inv.title }}</span>
-                            <span class="chat-pending-actions">
+                            <span class="chat-pending-title" :title="inv.title">{{ inv.title }}</span>
+                            <div class="chat-pending-actions" role="group" aria-label="Invitation actions">
                                 <button
                                     type="button"
-                                    class="chat-pending-accept"
-                                    aria-label="Accept invitation"
-                                    title="Accept and open chat"
+                                    class="chat-pending-accept-btn"
                                     @click="acceptPendingInvite(inv)"
                                 >
-                                    ✓
+                                    Accept
                                 </button>
                                 <button
                                     type="button"
-                                    class="chat-pending-decline"
-                                    aria-label="Decline invitation"
-                                    title="Decline"
+                                    class="chat-pending-decline-btn"
                                     @click="declinePendingInvite(inv)"
                                 >
-                                    ×
+                                    Decline
                                 </button>
-                            </span>
+                            </div>
                         </li>
                         <li
                             v-for="chat of joinedChatsList"
@@ -45,6 +41,7 @@
                                 <small v-if="isOwnedChatChannel(chat.channel)" class="chat-owner-tag">
                                     (Owner)
                                 </small>
+                                <small v-if="chat.spectator" class="chat-spectator-tag">(Spectator)</small>
                             </button>
                         </li>
                     </ul>
@@ -66,9 +63,11 @@
                                 type="button"
                                 @click="changeChat(chat)"
                                 class="chat-link"
-                                :disabled="isGlobalChatFull(chat)"
+                                :disabled="isGlobalChatClosedToJoin(chat)"
                             >
-                                <span class="chat-global-title-core">{{ globalChatDisplayTitleBase(chat) }}</span>
+                                <span class="chat-global-title-core">{{
+                                    globalChatDisplayTitleWithSpectating(chat)
+                                }}</span>
                                 <span class="chat-global-meta">{{ globalChatPublicMetaSuffix(chat) }}</span>
                             </button>
                         </li>

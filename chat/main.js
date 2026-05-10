@@ -8,6 +8,7 @@ import {
 import {
   lookupKnownChatTitle,
   lookupKnownChatPlayers,
+  lookupKnownChatSpectator,
   addKnownChat,
   loadAllKnownChats,
   removeKnownChat,
@@ -24,6 +25,7 @@ import {
   PARTYUP_DICE_OPTIONS,
   isBloodOnTheClocktowerGame,
   effectiveInviteLocked,
+  effectiveSpectatingEnabled,
   effectiveBannedActors as bannedActorsForChannel,
   effectiveKickTimestamps,
   effectiveEnabledGameTools,
@@ -40,7 +42,10 @@ import { headerChatLivePlayers } from "../shared/header-chat-live.js";
 import { PARTYUP_SCROLL_CHAT_TOP_EVENT } from "../shared/chat-ui-events.js";
 import { buildPartyupInviteLink } from "../shared/chat-invite.js";
 import { recordCoplayActors, getCoplayActorsForSidebar } from "../shared/coplay.js";
-import { normalizePartyupActorHandle } from "../shared/partyup-invite-push.js";
+import {
+  normalizeInviteToActorId,
+  sessionActorIdForInvites,
+} from "../shared/partyup-invite-push.js";
 import { loadScrollRatio, saveScrollRatio } from "../shared/chat-scroll-state.js";
 import { chatDisplayPrefs } from "../shared/chat-display-prefs.js";
 import { resolveRulebookUrl } from "../shared/game-rulebooks.js";
@@ -421,6 +426,7 @@ function chatSetup(props) {
           private: { type: "boolean" },
           published: { type: "number" },
           inviteLocked: { type: "boolean" },
+          spectatingEnabled: { type: "boolean" },
           enabledGameTools: { type: "array", items: { type: "string" } },
           bannedActors: { type: "array", items: { type: "string" } },
           kickTimestamps: { type: "object" },
@@ -520,6 +526,10 @@ function chatSetup(props) {
     channel.value ? effectiveInviteLocked(chats.value, channel.value) : false,
   );
 
+  const spectatingEnabledEffective = computed(() =>
+    channel.value ? effectiveSpectatingEnabled(chats.value, channel.value) : false,
+  );
+
   const bannedActorsEffective = computed(() =>
     channel.value ? bannedActorsForChannel(chats.value, channel.value) : [],
   );
@@ -578,6 +588,10 @@ function chatSetup(props) {
     try {
       const actor = session.value?.actor;
       const ch = channel.value;
+      if (actor && ch) {
+        const all = loadAllKnownChats();
+        addKnownChat(all, session.value, { channel: ch, spectator: false });
+      }
       if (actor && ch && participantActors.value.has(actor)) {
         await postPartyupLeavePing();
       }
@@ -697,6 +711,7 @@ function chatSetup(props) {
   const settingsOtherGameDetail = ref("");
   const settingsMaxPlayers = ref(1);
   const settingsInviteLocked = ref(false);
+  const settingsSpectatingEnabled = ref(false);
   const settingsEnabledGameTools = ref([...PARTYUP_DEFAULT_ENABLED_GAME_TOOLS]);
   const settingsSaveError = ref("");
   const showGameChangeWarning = ref(false);
@@ -723,6 +738,7 @@ function chatSetup(props) {
     }
     settingsMaxPlayers.value = maxPlayersEffective.value;
     settingsInviteLocked.value = inviteLockedEffective.value;
+    settingsSpectatingEnabled.value = spectatingEnabledEffective.value;
     settingsEnabledGameTools.value = [...effectiveEnabledGameTools(chats.value, channel.value)];
     pendingGameChoice.value = null;
     showGameChangeWarning.value = false;
@@ -895,14 +911,118 @@ function chatSetup(props) {
     if (!channel.value || !session.value?.actor || !currentChat.value) return null;
     if (bannedActorsEffective.value.includes(session.value.actor)) return "banned";
     if (currentUserIsParticipant.value) return null;
-    if (participantCount.value >= maxPlayersEffective.value) return "full";
+    if (
+      participantCount.value >= maxPlayersEffective.value &&
+      !spectatingEnabledEffective.value
+    ) {
+      return "full";
+    }
     return null;
   });
 
   const joinBlocked = computed(() => joinBlockedKind.value != null);
 
+  const roomIsFull = computed(
+    () => participantCount.value >= maxPlayersEffective.value,
+  );
+
+  const knownChatStorageRevision = ref(0);
+
+  const knownChatSpectatorStored = computed(() => {
+    void knownChatStorageRevision.value;
+    const ch = channel.value;
+    const ses = session.value;
+    if (!ch || !ses) return false;
+    return lookupKnownChatSpectator(ses, ch);
+  });
+
+  const isSpectatorSession = computed(() => {
+    if (!session.value?.actor || !channel.value || !currentChat.value) return false;
+    if (bannedActorsEffective.value.includes(session.value.actor)) return false;
+    if (currentUserIsParticipant.value) return false;
+    if (knownChatSpectatorStored.value) return true;
+    return roomIsFull.value && spectatingEnabledEffective.value;
+  });
+
+  /**
+   * Spectator sidebar + read-only chrome: confirmed spectator, or still loading messages in a
+   * spectating-enabled room (join ping must not run until occupancy is trustworthy).
+   */
+  const showSpectatorChrome = computed(() => {
+    if (!session.value?.actor || !channel.value || !currentChat.value) return false;
+    if (bannedActorsEffective.value.includes(session.value.actor)) return false;
+    if (currentUserIsParticipant.value) return false;
+    if (!spectatingEnabledEffective.value) return false;
+    return areMessageObjectsLoading.value || isSpectatorSession.value;
+  });
+
+  watch(
+    () => ({
+      ch: channel.value,
+      spec: spectatingEnabledEffective.value,
+      full: roomIsFull.value,
+      part: currentUserIsParticipant.value,
+      actor: session.value?.actor,
+      banned:
+        Boolean(session.value?.actor) &&
+        bannedActorsEffective.value.includes(session.value.actor),
+    }),
+    (s) => {
+      if (!s.ch || !s.actor || s.banned || s.part || !s.spec || !s.full) return;
+      if (lookupKnownChatSpectator(session.value, s.ch)) return;
+      const all = loadAllKnownChats();
+      addKnownChat(all, session.value, { channel: s.ch, spectator: true });
+      knownChatStorageRevision.value++;
+    },
+    { immediate: true },
+  );
+
+  const joinAsPlayerBusy = ref(false);
+
+  const canJoinAsPlayerFromSpectator = computed(
+    () =>
+      !areMessageObjectsLoading.value &&
+      isSpectatorSession.value &&
+      !joinAsPlayerBusy.value &&
+      participantCount.value < maxPlayersEffective.value,
+  );
+
+  async function joinChatAsPlayerFromSpectator() {
+    if (!session.value?.actor || !channel.value || !canJoinAsPlayerFromSpectator.value) return;
+    joinAsPlayerBusy.value = true;
+    try {
+      const all = loadAllKnownChats();
+      addKnownChat(all, session.value, {
+        channel: channel.value,
+        spectator: false,
+      });
+      knownChatStorageRevision.value++;
+      const messageValue = {
+        content: "",
+        published: Date.now(),
+        partyupJoin: true,
+      };
+      if (activeProfile.value?.id) messageValue.profileId = activeProfile.value.id;
+      if (activeProfile.value?.name) messageValue.profileName = activeProfile.value.name;
+      if (activeProfile.value?.avatar) messageValue.profileAvatar = activeProfile.value.avatar;
+      await graffiti.post({ value: messageValue, channels: [channel.value] }, session.value);
+      joinPingPostedForChannel.value = channel.value;
+    } catch (e) {
+      console.error(e);
+    } finally {
+      joinAsPlayerBusy.value = false;
+    }
+  }
+
   async function postPartyupJoinPing() {
-    if (!session.value?.actor || !channel.value || joinBlocked.value) return;
+    if (
+      !session.value?.actor ||
+      !channel.value ||
+      joinBlocked.value ||
+      isSpectatorSession.value ||
+      areMessageObjectsLoading.value
+    )
+      return;
     const messageValue = {
       content: "",
       published: Date.now(),
@@ -928,9 +1048,15 @@ function chatSetup(props) {
   }
 
   watch(
-    () => [channel.value, session.value?.actor, joinBlocked.value],
-    async ([ch, actor, blocked]) => {
-      if (!ch || !actor || blocked) {
+    () => [
+      channel.value,
+      session.value?.actor,
+      joinBlocked.value,
+      isSpectatorSession.value,
+      areMessageObjectsLoading.value,
+    ],
+    async ([ch, actor, blocked, spect, loading]) => {
+      if (!ch || !actor || blocked || spect || loading) {
         return;
       }
       if (joinPingPostedForChannel.value === ch) return;
@@ -947,7 +1073,15 @@ function chatSetup(props) {
   watch(
     () => activeProfile.value?.id,
     async (newId, oldId) => {
-      if (!newId || !channel.value || !session.value?.actor || joinBlocked.value) return;
+      if (
+        !newId ||
+        !channel.value ||
+        !session.value?.actor ||
+        joinBlocked.value ||
+        isSpectatorSession.value ||
+        areMessageObjectsLoading.value
+      )
+        return;
       if (joinPingPostedForChannel.value !== channel.value) return;
       if (oldId === undefined) return;
       try {
@@ -989,6 +1123,10 @@ function chatSetup(props) {
       effectiveChatTitle(chats.value, channel.value) ||
       String(currentChat.value?.value?.title || "").trim() ||
       "Chat";
+    const specEn =
+      overrides.spectatingEnabled !== undefined
+        ? Boolean(overrides.spectatingEnabled)
+        : spectatingEnabledEffective.value;
     await graffiti.post(
       {
         value: {
@@ -1000,6 +1138,7 @@ function chatSetup(props) {
           game,
           published: Date.now(),
           inviteLocked: inviteL,
+          spectatingEnabled: specEn,
           enabledGameTools: enabledTools,
           bannedActors: banned,
           kickTimestamps: kicks,
@@ -1036,6 +1175,7 @@ function chatSetup(props) {
         players: cap,
         game: resolvedGame,
         inviteLocked: settingsInviteLocked.value,
+        spectatingEnabled: settingsSpectatingEnabled.value,
         enabledGameTools: normalizeEnabledGameTools(settingsEnabledGameTools.value),
         bannedActors: [...bannedActorsEffective.value],
         kickTimestamps: { ...kickTimestampsEffective.value },
@@ -1224,7 +1364,7 @@ function chatSetup(props) {
       dir: actorProfileDirectory.value,
       ch: channel.value,
       me: session.value?.actor,
-      blocked: joinBlocked.value,
+      blocked: joinBlocked.value || showSpectatorChrome.value,
     }),
     (s) => {
       if (!s.me || !s.ch) return;
@@ -1264,7 +1404,8 @@ function chatSetup(props) {
 
   function selectInviteUserSuggestion(row) {
     if (!row?.actorId) return;
-    inviteUserActorInput.value = row.actorId;
+    inviteUserActorInput.value =
+      normalizeInviteToActorId(row.actorId) || String(row.actorId).trim();
     showInviteUserSuggestDropdown.value = false;
   }
 
@@ -1276,13 +1417,13 @@ function chatSetup(props) {
   }
 
   const canSendInvitePush = computed(() => {
-    const normalized = normalizePartyupActorHandle(inviteUserActorInput.value);
-    const me = session.value?.actor ? String(session.value.actor).trim().toLowerCase() : "";
+    const targetId = normalizeInviteToActorId(inviteUserActorInput.value);
+    const meId = sessionActorIdForInvites(session.value);
     return Boolean(
-      normalized &&
+      targetId &&
         channel.value &&
-        me &&
-        normalized !== me &&
+        meId &&
+        targetId !== meId &&
         !invitePushBusy.value,
     );
   });
@@ -1291,7 +1432,13 @@ function chatSetup(props) {
     const currentActor = session.value?.actor;
     return sortedMessageObjects.value.filter((messageObject) => {
       if (isPartyupPresenceMessage(messageObject)) return false;
-      const privateToActor = messageObject.value.privateToActor;
+      const v = messageObject.value || {};
+      const privateToActor = v.privateToActor;
+      const body = String(v.content ?? "").trim();
+      const hasReplyQuote = Boolean(v.replyToUrl);
+      if (!body && !privateToActor && !hasReplyQuote) {
+        return false;
+      }
       if (!privateToActor) return true;
       return messageObject.actor === currentActor || privateToActor === currentActor;
     });
@@ -1739,6 +1886,7 @@ function chatSetup(props) {
   }
 
   function onProfileAvatarClick(messageObject) {
+    if (showSpectatorChrome.value || areMessageObjectsLoading.value) return;
     if (messageObject.actor === session.value?.actor) return;
     if (!participantActors.value.has(messageObject.actor)) return;
     const nickname = messageObject.value.profileName || "User";
@@ -1746,10 +1894,12 @@ function chatSetup(props) {
   }
 
   function onPlayerClick(user) {
+    if (showSpectatorChrome.value || areMessageObjectsLoading.value) return;
     setPrivateDraftTarget(user.actor, user.name || "User");
   }
 
   function beginReplyTo(messageObject) {
+    if (showSpectatorChrome.value || areMessageObjectsLoading.value) return;
     if (!messageObject?.url || isPartyupPresenceMessage(messageObject)) return;
     const me = session.value?.actor;
     if (!me) return;
@@ -1813,6 +1963,7 @@ function chatSetup(props) {
   }
 
   function attemptSendMessage() {
+    if (showSpectatorChrome.value || areMessageObjectsLoading.value) return;
     if (isSending.value) return;
     if (!myMessage.value.trim()) {
       triggerEmptySendShake();
@@ -1823,7 +1974,7 @@ function chatSetup(props) {
 
   async function sendMessage() {
     if (!session.value || !channel.value) return;
-    if (joinBlocked.value) return;
+    if (joinBlocked.value || showSpectatorChrome.value || areMessageObjectsLoading.value) return;
     const draftMessage = myMessage.value.trim();
     if (!draftMessage) return;
     sendError.value = "";
@@ -1911,7 +2062,7 @@ function chatSetup(props) {
 
   async function rollDiceAndPmSelf() {
     if (!session.value?.actor || !channel.value) return;
-    if (joinBlocked.value) return;
+    if (joinBlocked.value || showSpectatorChrome.value || areMessageObjectsLoading.value) return;
     const sides = Math.floor(Number(selectedDiceSides.value));
     if (!Number.isFinite(sides) || sides < 1) return;
     isRollingDice.value = true;
@@ -2024,20 +2175,23 @@ function chatSetup(props) {
 
   async function sendInvitePushToUser() {
     invitePushFeedback.value = "";
-    const normalized = normalizePartyupActorHandle(inviteUserActorInput.value);
-    if (!normalized || !channel.value || !session.value?.actor) {
+    const normalized = normalizeInviteToActorId(inviteUserActorInput.value);
+    const meId = sessionActorIdForInvites(session.value);
+    if (!normalized || !channel.value || !meId) {
       if (inviteUserActorInput.value.trim()) {
-        invitePushFeedback.value = "Use a Graffiti name (e.g. ash) or full handle (ash.graffiti.actor).";
+        invitePushFeedback.value =
+          "Use a Graffiti name (e.g. ash), full handle (ash.graffiti.actor), or pick from suggestions.";
       }
       return;
     }
-    const me = String(session.value.actor).trim().toLowerCase();
-    if (normalized === me) {
+    if (normalized === meId) {
       invitePushFeedback.value = "You can’t invite yourself.";
       return;
     }
     if (
-      bannedActorsEffective.value.some((id) => String(id).trim().toLowerCase() === normalized)
+      bannedActorsEffective.value.some(
+        (id) => normalizeInviteToActorId(String(id)) === normalized,
+      )
     ) {
       invitePushFeedback.value = "That player is banned from this chat.";
       return;
@@ -2133,6 +2287,12 @@ function chatSetup(props) {
     participantCount,
     joinBlocked,
     joinBlockedKind,
+    spectatingEnabledEffective,
+    isSpectatorSession,
+    showSpectatorChrome,
+    canJoinAsPlayerFromSpectator,
+    joinChatAsPlayerFromSpectator,
+    joinAsPlayerBusy,
     inviteLockedEffective,
     showSidebarInviteSection,
     inviteSectionExpanded,
@@ -2157,6 +2317,7 @@ function chatSetup(props) {
     settingsOtherGameDetail,
     settingsMaxPlayers,
     settingsInviteLocked,
+    settingsSpectatingEnabled,
     settingsEnabledGameTools,
     PARTYUP_GAME_TOOL_OPTIONS,
     settingsSaveError,

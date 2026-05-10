@@ -154,6 +154,19 @@ export function effectiveInviteLocked(objects, channelId) {
   return Boolean(latest?.value?.inviteLocked);
 }
 
+/** When true, users can enter a full room as read-only spectators (until they join as a player). */
+export function effectiveSpectatingEnabled(objects, channelId) {
+  const id = String(channelId ?? "").trim();
+  if (!id) return false;
+  const latest = latestUpdateForChannel(objects, id);
+  const u = latest?.value?.spectatingEnabled;
+  if (typeof u === "boolean") return u;
+  const create = createForChannel(objects, id);
+  const c = create?.value?.spectatingEnabled;
+  if (typeof c === "boolean") return c;
+  return false;
+}
+
 /** Banned actor ids from latest Chat Update (cannot rejoin). */
 export function effectiveBannedActors(objects, channelId) {
   const latest = latestUpdateForChannel(objects, channelId);
