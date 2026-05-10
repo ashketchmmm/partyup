@@ -22,6 +22,7 @@ import {
   normalizeInviteToActorId,
   sessionActorIdForInvites,
   inviteActorMatchesSessionSync,
+  partyupHandleToActorLookupCandidates,
 } from "../shared/partyup-invite-push.js";
 import {
   PARTYUP_GAME_OPTIONS,
@@ -91,6 +92,7 @@ function setup() {
         allKnownChats.value = loadAllKnownChats();
         allPendingInvites.value = loadAllPendingInvites();
         allDismissedPushInvites.value = loadDismissedPushInviteChannels();
+        void pollInvitePush?.();
       }
     },
     { immediate: true },
@@ -103,6 +105,7 @@ function setup() {
         allKnownChats.value = loadAllKnownChats();
         allPendingInvites.value = loadAllPendingInvites();
         allDismissedPushInvites.value = loadDismissedPushInviteChannels();
+        void pollInvitePush?.();
       }
     },
     { immediate: true },
@@ -161,9 +164,11 @@ function setup() {
     partyupChatSchema,
   );
 
-  const { objects: invitePushObjects } = useGraffitiDiscover(
+  const { objects: invitePushObjects, poll: pollInvitePush } = useGraffitiDiscover(
     () => (session.value ? ["partyup-26"] : []),
     PARTYUP_INVITE_PUSH_SCHEMA,
+    () => session.value,
+    true,
   );
 
   /** Stable digest so new invite objects reliably trigger ingest (discover arrays may mutate in place). */
@@ -179,24 +184,32 @@ function setup() {
       .join("\n"),
   );
 
+  let inviteIngestSeq = 0;
   watch(
     () => [invitePushIngestFingerprint.value, session.value?.actor],
     async () => {
+      const seq = ++inviteIngestSeq;
       const meAct = sessionActorIdForInvites(session.value);
       if (!meAct) return;
       let added = false;
       for (const o of invitePushObjects.value) {
+        if (seq !== inviteIngestSeq) return;
         const v = o.value;
         if (!v || v.activity !== "Invite" || v.type !== "ChatInvite") continue;
         const invRaw = String(v.inviteToActor || "").trim();
         let matches = inviteActorMatchesSessionSync(session.value, invRaw);
         if (!matches && typeof graffiti.handleToActor === "function") {
-          const handleCandidate = normalizeInviteToActorId(invRaw) || invRaw;
-          try {
-            const resolved = await graffiti.handleToActor(handleCandidate);
-            matches = typeof resolved === "string" && resolved.trim() === meAct;
-          } catch {
-            matches = false;
+          const handleSeeds = partyupHandleToActorLookupCandidates(
+            normalizeInviteToActorId(invRaw) || invRaw,
+          );
+          for (const c of handleSeeds) {
+            try {
+              const resolved = await graffiti.handleToActor(c);
+              matches = typeof resolved === "string" && resolved.trim() === meAct;
+              if (matches) break;
+            } catch {
+              matches = false;
+            }
           }
         }
         if (!matches) continue;
@@ -210,7 +223,7 @@ function setup() {
         });
         added = true;
       }
-      if (added) {
+      if (added && seq === inviteIngestSeq) {
         allPendingInvites.value = loadAllPendingInvites();
       }
     },

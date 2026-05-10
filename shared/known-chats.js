@@ -28,8 +28,9 @@ export function getKnownChatsOwnerKey(session) {
     const s = raw.trim();
     return s.length > 0 ? s : null;
   }
+  /* Prefer `actor` before `id` so the same stable key is used as Graffiti session.actor (string). */
   if (raw != null && typeof raw === "object") {
-    for (const k of ["id", "actor", "handle", "username"]) {
+    for (const k of ["actor", "id", "handle", "username"]) {
       const v = raw[k];
       if (typeof v === "string" && v.trim()) return v.trim();
     }

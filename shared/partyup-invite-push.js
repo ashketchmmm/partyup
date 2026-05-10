@@ -92,3 +92,18 @@ export function inviteActorMatchesSessionSync(session, inviteToActorRaw) {
   const nMe = normalizeInviteToActorId(me);
   return Boolean(nInv && nMe && nInv === nMe);
 }
+
+const GRAFFITI_ACTOR_SUFFIX = ".graffiti.actor";
+
+/** Values to pass to Graffiti handleToActor (API often expects the short name, not only FQDN). */
+export function partyupHandleToActorLookupCandidates(normalized) {
+  const out = [];
+  const n = String(normalized || "").trim().toLowerCase();
+  if (!n) return out;
+  out.push(n);
+  if (n.endsWith(GRAFFITI_ACTOR_SUFFIX)) {
+    const short = n.slice(0, -GRAFFITI_ACTOR_SUFFIX.length);
+    if (short && !out.includes(short)) out.push(short);
+  }
+  return out;
+}
