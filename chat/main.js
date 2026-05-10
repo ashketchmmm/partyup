@@ -45,7 +45,6 @@ import { recordCoplayActors, getCoplayActorsForSidebar } from "../shared/coplay.
 import {
   normalizeInviteToActorId,
   sessionActorIdForInvites,
-  partyupHandleToActorLookupCandidates,
 } from "../shared/partyup-invite-push.js";
 import { loadScrollRatio, saveScrollRatio } from "../shared/chat-scroll-state.js";
 import { chatDisplayPrefs } from "../shared/chat-display-prefs.js";
@@ -569,7 +568,6 @@ function chatSetup(props) {
   watch(
     () => currentChat.value?.url,
     (url) => {
-      if (suppressKnownChatPersist.value) return;
       if (!url || !channel.value || !session.value?.actor) return;
       const v = currentChat.value?.value;
       if (!v || v.channel !== channel.value) return;
@@ -704,7 +702,6 @@ function chatSetup(props) {
     } catch (e) {
       console.error(e);
       deleteChatError.value = e?.message || "Could not delete this chat.";
-      suppressKnownChatPersist.value = false;
     } finally {
       isDeletingChat.value = false;
     }
@@ -2184,30 +2181,16 @@ function chatSetup(props) {
     }
     invitePushBusy.value = true;
     try {
-      let inviteActorId = "";
-      let lastResolveErr = null;
+      let inviteActorId = normalized;
       if (typeof graffiti.handleToActor === "function") {
-        const candidates = partyupHandleToActorLookupCandidates(normalized);
-        for (const c of candidates) {
-          try {
-            const resolved = await graffiti.handleToActor(c);
-            if (typeof resolved === "string" && resolved.trim()) {
-              inviteActorId = resolved.trim();
-              break;
-            }
-          } catch (e) {
-            lastResolveErr = e;
-          }
-        }
-        if (!inviteActorId) {
-          console.warn(lastResolveErr);
+        try {
+          inviteActorId = await graffiti.handleToActor(normalized);
+        } catch (e) {
+          console.warn(e);
           invitePushFeedback.value =
-            lastResolveErr?.message ||
-            "Could not find a Graffiti account for that name. Try the short name (e.g. ash) or full handle.";
+            e?.message || "Could not find a Graffiti account for that name. Check spelling.";
           return;
         }
-      } else {
-        inviteActorId = normalized;
       }
       if (!inviteActorId || typeof inviteActorId !== "string") {
         invitePushFeedback.value = "Could not resolve that name to an account.";
