@@ -320,13 +320,13 @@ html {
     gap: 1rem;
     margin-bottom: 1rem;
     align-items: start;
+    min-width: 0;
   }
 
+  /* Scroll only on <main>; no nested scrollbar here (was max-height + overflow-y). */
   .chat-box-global {
-    max-height: calc(100vh - 9rem);
-    overflow-y: auto;
     align-self: start;
-    min-height: 0;
+    min-width: 0;
   }
 
   .profile-page-layout {
@@ -2654,10 +2654,6 @@ html {
   @media (max-width: 900px) {
     .chat-layout {
       grid-template-columns: 1fr;
-    }
-
-    .chat-box-global {
-      max-height: min(50vh, 22rem);
     }
 
     .chat-screen {

@@ -19,6 +19,9 @@ export const PARTYUP_INVITE_PUSH_SCHEMA = {
   },
 };
 
+/** RFC 4122 UUID (chat channel ids, and some actor ids) — must not get `.graffiti.actor` suffix. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * Turns `ash` into `ash.graffiti.actor`. Leaves full handles (with a dot) as trimmed lowercase.
  */
@@ -28,6 +31,7 @@ export function normalizePartyupActorHandle(raw) {
     .replace(/^@/, "")
     .toLowerCase();
   if (!s) return "";
+  if (UUID_RE.test(s)) return s;
   if (!s.includes(".")) {
     if (!/^[a-z0-9_-]+$/.test(s)) return "";
     return `${s}.graffiti.actor`;
@@ -59,16 +63,32 @@ export function normalizeInviteToActorId(raw) {
   return "";
 }
 
-/** Stable string for matching the logged-in user to `inviteToActor` on invite objects. */
+/**
+ * Graffiti session `actor` string (canonical id). Do not rewrite through handle normalization —
+ * that can corrupt UUIDs and other opaque actor ids.
+ */
 export function sessionActorIdForInvites(session) {
   const raw = session?.actor;
-  if (raw == null) return "";
-  if (typeof raw === "string") return normalizeInviteToActorId(raw);
-  if (typeof raw === "object") {
-    for (const k of ["id", "actor", "handle", "username"]) {
+  if (typeof raw === "string") {
+    const s = raw.trim();
+    return s.length > 0 ? s : "";
+  }
+  if (raw != null && typeof raw === "object") {
+    for (const k of ["actor", "id", "handle", "username"]) {
       const v = raw[k];
-      if (typeof v === "string" && v.trim()) return normalizeInviteToActorId(v);
+      if (typeof v === "string" && v.trim()) return v.trim();
     }
   }
-  return normalizeInviteToActorId(String(raw));
+  return "";
+}
+
+/** Sync-only: strict id match or normalized handle equality (legacy invites). */
+export function inviteActorMatchesSessionSync(session, inviteToActorRaw) {
+  const me = sessionActorIdForInvites(session);
+  const inv = String(inviteToActorRaw ?? "").trim();
+  if (!me || !inv) return false;
+  if (inv === me) return true;
+  const nInv = normalizeInviteToActorId(inv);
+  const nMe = normalizeInviteToActorId(me);
+  return Boolean(nInv && nMe && nInv === nMe);
 }

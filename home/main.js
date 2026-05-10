@@ -21,6 +21,7 @@ import {
   PARTYUP_INVITE_PUSH_SCHEMA,
   normalizeInviteToActorId,
   sessionActorIdForInvites,
+  inviteActorMatchesSessionSync,
 } from "../shared/partyup-invite-push.js";
 import {
   PARTYUP_GAME_OPTIONS,
@@ -180,15 +181,25 @@ function setup() {
 
   watch(
     () => [invitePushIngestFingerprint.value, session.value?.actor],
-    () => {
-      const meId = sessionActorIdForInvites(session.value);
-      if (!meId) return;
+    async () => {
+      const meAct = sessionActorIdForInvites(session.value);
+      if (!meAct) return;
       let added = false;
       for (const o of invitePushObjects.value) {
         const v = o.value;
         if (!v || v.activity !== "Invite" || v.type !== "ChatInvite") continue;
-        const targetId = normalizeInviteToActorId(v.inviteToActor);
-        if (!targetId || targetId !== meId) continue;
+        const invRaw = String(v.inviteToActor || "").trim();
+        let matches = inviteActorMatchesSessionSync(session.value, invRaw);
+        if (!matches && typeof graffiti.handleToActor === "function") {
+          const handleCandidate = normalizeInviteToActorId(invRaw) || invRaw;
+          try {
+            const resolved = await graffiti.handleToActor(handleCandidate);
+            matches = typeof resolved === "string" && resolved.trim() === meAct;
+          } catch {
+            matches = false;
+          }
+        }
+        if (!matches) continue;
         const cid = String(v.channel || "").trim();
         if (!isValidChatChannelId(cid)) continue;
         if (isPushInviteChannelDismissed(allDismissedPushInvites.value, session.value, cid)) continue;
@@ -207,16 +218,15 @@ function setup() {
   );
 
   const pendingInvitesDisplay = computed(() => {
-    const meId = sessionActorIdForInvites(session.value);
     const list = getPendingInvitesForUser(allPendingInvites.value, session.value);
     return list.map((p) => {
       let fromPush = String(p.inviteTitle || "").trim();
-      if (!fromPush && meId) {
+      if (!fromPush) {
         for (const o of invitePushObjects.value) {
           const v = o.value;
           if (!v || v.activity !== "Invite" || v.type !== "ChatInvite") continue;
           if (String(v.channel || "").trim() !== p.channel) continue;
-          if (normalizeInviteToActorId(v.inviteToActor) !== meId) continue;
+          if (!inviteActorMatchesSessionSync(session.value, v.inviteToActor)) continue;
           fromPush = String(v.chatTitle || "").trim();
           if (fromPush) break;
         }
@@ -468,10 +478,15 @@ function setup() {
     allPendingInvites.value = loadAllPendingInvites();
     persistKnownChat(allKnownChats.value, session.value, {
       channel: id,
-      title:
-        inv.title && inv.title !== "Chat invitation"
-          ? inv.title
-          : lookupKnownChatTitle(session.value, id) || "Known Chat",
+      title: (() => {
+        const t = String(inv?.title || "").trim();
+        if (t && !/^chat invitation$/i.test(t) && !/^known chat$/i.test(t)) return t;
+        return (
+          effectiveChatTitle(chats.value, id) ||
+          lookupKnownChatTitle(session.value, id) ||
+          "Known Chat"
+        );
+      })(),
     });
     allKnownChats.value = loadAllKnownChats();
     goToChat(id);

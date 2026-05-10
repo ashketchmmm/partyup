@@ -1418,14 +1418,8 @@ function chatSetup(props) {
 
   const canSendInvitePush = computed(() => {
     const targetId = normalizeInviteToActorId(inviteUserActorInput.value);
-    const meId = sessionActorIdForInvites(session.value);
-    return Boolean(
-      targetId &&
-        channel.value &&
-        meId &&
-        targetId !== meId &&
-        !invitePushBusy.value,
-    );
+    const meAct = sessionActorIdForInvites(session.value);
+    return Boolean(targetId && channel.value && meAct && !invitePushBusy.value);
   });
 
   const visibleMessageObjects = computed(() => {
@@ -2176,28 +2170,47 @@ function chatSetup(props) {
   async function sendInvitePushToUser() {
     invitePushFeedback.value = "";
     const normalized = normalizeInviteToActorId(inviteUserActorInput.value);
-    const meId = sessionActorIdForInvites(session.value);
-    if (!normalized || !channel.value || !meId) {
+    const meAct = sessionActorIdForInvites(session.value);
+    if (!normalized || !channel.value || !meAct) {
       if (inviteUserActorInput.value.trim()) {
         invitePushFeedback.value =
           "Use a Graffiti name (e.g. ash), full handle (ash.graffiti.actor), or pick from suggestions.";
       }
       return;
     }
-    if (normalized === meId) {
-      invitePushFeedback.value = "You can’t invite yourself.";
-      return;
-    }
-    if (
-      bannedActorsEffective.value.some(
-        (id) => normalizeInviteToActorId(String(id)) === normalized,
-      )
-    ) {
-      invitePushFeedback.value = "That player is banned from this chat.";
-      return;
-    }
     invitePushBusy.value = true;
     try {
+      let inviteActorId = normalized;
+      if (typeof graffiti.handleToActor === "function") {
+        try {
+          inviteActorId = await graffiti.handleToActor(normalized);
+        } catch (e) {
+          console.warn(e);
+          invitePushFeedback.value =
+            e?.message || "Could not find a Graffiti account for that name. Check spelling.";
+          return;
+        }
+      }
+      if (!inviteActorId || typeof inviteActorId !== "string") {
+        invitePushFeedback.value = "Could not resolve that name to an account.";
+        return;
+      }
+      inviteActorId = inviteActorId.trim();
+      if (inviteActorId === meAct) {
+        invitePushFeedback.value = "You can’t invite yourself.";
+        return;
+      }
+      if (
+        bannedActorsEffective.value.some((id) => {
+          const raw = String(id || "").trim();
+          if (!raw) return false;
+          if (raw === inviteActorId) return true;
+          return normalizeInviteToActorId(raw) === normalizeInviteToActorId(inviteActorId);
+        })
+      ) {
+        invitePushFeedback.value = "That player is banned from this chat.";
+        return;
+      }
       const title =
         effectiveChatTitle(chats.value, channel.value) ||
         String(currentChat.value?.value?.title || "").trim() ||
@@ -2208,7 +2221,7 @@ function chatSetup(props) {
             activity: "Invite",
             type: "ChatInvite",
             channel: channel.value,
-            inviteToActor: normalized,
+            inviteToActor: inviteActorId,
             chatTitle: title,
             published: Date.now(),
           },
