@@ -1,4 +1,4 @@
-import { ref, computed, watch } from "vue";
+import { ref, computed, watch, onUnmounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useGraffiti, useGraffitiSession, useGraffitiDiscover } from "@graffiti-garden/wrapper-vue";
 import {
@@ -6,6 +6,7 @@ import {
   getCurrentUserKnownChats,
   addKnownChat as persistKnownChat,
   lookupKnownChatTitle,
+  defaultKnownChatTitle,
 } from "../shared/known-chats.js";
 import {
   loadAllPendingInvites,
@@ -161,10 +162,33 @@ function setup() {
     partyupChatSchema,
   );
 
-  const { objects: invitePushObjects } = useGraffitiDiscover(
+  const { objects: invitePushObjects, poll: pollInvitePush } = useGraffitiDiscover(
     () => (session.value ? ["partyup-26"] : []),
     PARTYUP_INVITE_PUSH_SCHEMA,
   );
+
+  let invitePushPollTimer = null;
+  function clearInvitePushPoll() {
+    if (invitePushPollTimer != null) {
+      clearInterval(invitePushPollTimer);
+      invitePushPollTimer = null;
+    }
+  }
+
+  watch(
+    () => session.value?.actor,
+    (actor) => {
+      clearInvitePushPoll();
+      if (!actor) return;
+      void pollInvitePush();
+      invitePushPollTimer = setInterval(() => void pollInvitePush(), 7000);
+    },
+    { immediate: true },
+  );
+
+  onUnmounted(() => {
+    clearInvitePushPoll();
+  });
 
   /** Stable digest so new invite objects reliably trigger ingest (discover arrays may mutate in place). */
   const invitePushIngestFingerprint = computed(() =>
@@ -212,6 +236,7 @@ function setup() {
       }
       if (added) {
         allPendingInvites.value = loadAllPendingInvites();
+        void pollInvitePush();
       }
     },
     { immediate: true },
@@ -237,7 +262,7 @@ function setup() {
           fromPush ||
           effectiveChatTitle(chats.value, p.channel) ||
           lookupKnownChatTitle(session.value, p.channel) ||
-          "Chat invitation",
+          defaultKnownChatTitle(p.channel),
       };
     });
   });
@@ -484,7 +509,7 @@ function setup() {
         return (
           effectiveChatTitle(chats.value, id) ||
           lookupKnownChatTitle(session.value, id) ||
-          "Known Chat"
+          defaultKnownChatTitle(id)
         );
       })(),
     });
@@ -503,7 +528,13 @@ function setup() {
   function joinKnownChat() {
     const extracted = extractChatIdFromInviteInput(knownChatId.value);
     if (!extracted || !isValidChatChannelId(extracted)) return;
-    addKnownChat({ channel: extracted });
+    addKnownChat({
+      channel: extracted,
+      title:
+        effectiveChatTitle(chats.value, extracted) ||
+        lookupKnownChatTitle(session.value, extracted) ||
+        defaultKnownChatTitle(extracted),
+    });
     knownChatId.value = "";
     goToChat(extracted);
   }

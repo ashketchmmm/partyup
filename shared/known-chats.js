@@ -52,13 +52,23 @@ export function getCurrentUserKnownChats(allKnownChats, session) {
   return Array.isArray(knownChatsForUser) ? knownChatsForUser : [];
 }
 
+/** Fallback label when we have a channel id but no title yet. */
+export function defaultKnownChatTitle(channelId) {
+  const id = String(channelId ?? "").trim();
+  if (!id) return "Chat";
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(id)) {
+    return `Chat (${id.slice(0, 8)}…)`;
+  }
+  return "Chat";
+}
+
 export function removeKnownChat(allKnownChats, session, channelId) {
   const chatChannel = typeof channelId === "string" ? channelId.trim() : "";
   if (!chatChannel) return;
   const ownerKey = getKnownChatsOwnerKey(session);
   if (!ownerKey || !Array.isArray(allKnownChats[ownerKey])) return;
   const userKnownChats = allKnownChats[ownerKey];
-  const idx = userKnownChats.findIndex((chat) => chat.channel === chatChannel);
+  const idx = userKnownChats.findIndex((chat) => String(chat?.channel ?? "").trim() === chatChannel);
   if (idx >= 0) {
     userKnownChats.splice(idx, 1);
     saveAllKnownChats(allKnownChats);
@@ -74,14 +84,14 @@ export function addKnownChat(allKnownChats, session, chatInfo) {
     allKnownChats[ownerKey] = [];
   }
   const userKnownChats = allKnownChats[ownerKey];
-  const existingIndex = userKnownChats.findIndex((chat) => chat.channel === chatChannel);
+  const existingIndex = userKnownChats.findIndex((chat) => String(chat?.channel ?? "").trim() === chatChannel);
   const prev = existingIndex >= 0 ? userKnownChats[existingIndex] : null;
   const nextChat = {
     channel: chatChannel,
     title:
       chatInfo.title?.trim() ||
       (prev?.title && String(prev.title).trim()) ||
-      "Known Chat",
+      defaultKnownChatTitle(chatChannel),
     players:
       typeof chatInfo.players === "number"
         ? chatInfo.players
@@ -115,22 +125,24 @@ export function lookupKnownChatSpectator(session, channelId) {
   if (!id) return false;
   const all = loadAllKnownChats();
   const list = getCurrentUserKnownChats(all, session);
-  const hit = list.find((c) => c.channel === id);
+  const hit = list.find((c) => String(c?.channel ?? "").trim() === id);
   return Boolean(hit?.spectator);
 }
 
 export function lookupKnownChatTitle(session, channelId) {
   if (!channelId) return null;
+  const id = String(channelId).trim();
   const all = loadAllKnownChats();
   const list = getCurrentUserKnownChats(all, session);
-  const hit = list.find((c) => c.channel === channelId);
+  const hit = list.find((c) => String(c?.channel ?? "").trim() === id);
   return hit?.title ?? null;
 }
 
 export function lookupKnownChatPlayers(session, channelId) {
   if (!channelId) return null;
+  const id = String(channelId).trim();
   const all = loadAllKnownChats();
   const list = getCurrentUserKnownChats(all, session);
-  const hit = list.find((c) => c.channel === channelId);
+  const hit = list.find((c) => String(c?.channel ?? "").trim() === id);
   return hit?.players ?? null;
 }

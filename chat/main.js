@@ -12,6 +12,7 @@ import {
   addKnownChat,
   loadAllKnownChats,
   removeKnownChat,
+  defaultKnownChatTitle,
 } from "../shared/known-chats.js";
 import {
   PARTYUP_GAME_OPTIONS,
@@ -44,6 +45,7 @@ import { buildPartyupInviteLink } from "../shared/chat-invite.js";
 import { recordCoplayActors, getCoplayActorsForSidebar } from "../shared/coplay.js";
 import {
   normalizeInviteToActorId,
+  normalizePartyupActorHandle,
   sessionActorIdForInvites,
 } from "../shared/partyup-invite-push.js";
 import { loadScrollRatio, saveScrollRatio } from "../shared/chat-scroll-state.js";
@@ -450,7 +452,7 @@ function chatSetup(props) {
     return (
       fromObjects ||
       lookupKnownChatTitle(session.value, channel.value) ||
-      "Known Chat"
+      defaultKnownChatTitle(channel.value)
     );
   });
 
@@ -549,7 +551,7 @@ function chatSetup(props) {
       title:
         effectiveChatTitle(chats.value, ch) ||
         lookupKnownChatTitle(ses, ch) ||
-        "Known Chat",
+        defaultKnownChatTitle(ch),
       players: lookupKnownChatPlayers(ses, ch),
       game: effectiveGame(chats.value, ch),
     });
@@ -568,6 +570,7 @@ function chatSetup(props) {
   watch(
     () => currentChat.value?.url,
     (url) => {
+      if (suppressKnownChatPersist.value) return;
       if (!url || !channel.value || !session.value?.actor) return;
       const v = currentChat.value?.value;
       if (!v || v.channel !== channel.value) return;
@@ -577,7 +580,7 @@ function chatSetup(props) {
         title:
           effectiveChatTitle(chats.value, channel.value) ||
           String(v.title || "").trim() ||
-          "Known Chat",
+          defaultKnownChatTitle(channel.value),
         players: typeof v.players === "number" ? v.players : null,
         game: v.game,
       });
@@ -591,7 +594,17 @@ function chatSetup(props) {
       // Forget / delete already removed the row from Joined Chats; do not re-add a bare "Known Chat" entry.
       if (actor && ch && !suppressKnownChatPersist.value) {
         const all = loadAllKnownChats();
-        addKnownChat(all, session.value, { channel: ch, spectator: false });
+        addKnownChat(all, session.value, {
+          channel: ch,
+          spectator: false,
+          title:
+            effectiveChatTitle(chats.value, ch) ||
+            lookupKnownChatTitle(session.value, ch) ||
+            String(currentChat.value?.value?.title || "").trim() ||
+            defaultKnownChatTitle(ch),
+          players: lookupKnownChatPlayers(session.value, ch),
+          game: effectiveGame(chats.value, ch),
+        });
       }
       if (actor && ch && participantActors.value.has(actor)) {
         await postPartyupLeavePing();
@@ -727,7 +740,7 @@ function chatSetup(props) {
     settingsChatTitle.value =
       (channel.value ? effectiveChatTitle(chats.value, channel.value) : "") ||
       String(currentChat.value?.value?.title || "").trim() ||
-      "Known Chat";
+      defaultKnownChatTitle(channel.value);
     const allowedGames = new Set(PARTYUP_GAME_OPTIONS.map((o) => o.value));
     const g = currentChatGame.value;
     if (allowedGames.has(g)) {
@@ -1172,7 +1185,7 @@ function chatSetup(props) {
           resolvedChatTitle ||
           effectiveChatTitle(chats.value, channel.value) ||
           String(currentChat.value?.value?.title || "").trim() ||
-          "Known Chat",
+          defaultKnownChatTitle(channel.value),
         players: cap,
         game: resolvedGame,
         inviteLocked: settingsInviteLocked.value,
@@ -1418,9 +1431,9 @@ function chatSetup(props) {
   }
 
   const canSendInvitePush = computed(() => {
-    const targetId = normalizeInviteToActorId(inviteUserActorInput.value);
+    const rawIn = inviteUserActorInput.value.trim().replace(/^@/, "");
     const meAct = sessionActorIdForInvites(session.value);
-    return Boolean(targetId && channel.value && meAct && !invitePushBusy.value);
+    return Boolean(rawIn && channel.value && meAct && !invitePushBusy.value);
   });
 
   const visibleMessageObjects = computed(() => {
@@ -2170,25 +2183,50 @@ function chatSetup(props) {
 
   async function sendInvitePushToUser() {
     invitePushFeedback.value = "";
-    const normalized = normalizeInviteToActorId(inviteUserActorInput.value);
     const meAct = sessionActorIdForInvites(session.value);
-    if (!normalized || !channel.value || !meAct) {
-      if (inviteUserActorInput.value.trim()) {
-        invitePushFeedback.value =
-          "Use a Graffiti name (e.g. ash), full handle (ash.graffiti.actor), or pick from suggestions.";
-      }
+    const rawIn = inviteUserActorInput.value.trim().replace(/^@/, "");
+    if (!channel.value || !meAct) return;
+    if (!rawIn) {
+      invitePushFeedback.value =
+        "Use a Graffiti name (e.g. ash), full handle (ash.graffiti.actor), or pick from suggestions.";
       return;
     }
     invitePushBusy.value = true;
     try {
-      let inviteActorId = normalized;
+      let inviteActorId = "";
       if (typeof graffiti.handleToActor === "function") {
-        try {
-          inviteActorId = await graffiti.handleToActor(normalized);
-        } catch (e) {
-          console.warn(e);
+        const candidates = [];
+        const pushCand = (x) => {
+          const s = String(x ?? "").trim();
+          if (s && !candidates.includes(s)) candidates.push(s);
+        };
+        pushCand(normalizeInviteToActorId(inviteUserActorInput.value));
+        pushCand(normalizePartyupActorHandle(inviteUserActorInput.value));
+        pushCand(rawIn.toLowerCase());
+        if (rawIn !== rawIn.toLowerCase()) pushCand(rawIn);
+
+        let lastErr = null;
+        for (const c of candidates) {
+          try {
+            const r = await graffiti.handleToActor(c);
+            if (typeof r === "string" && r.trim()) {
+              inviteActorId = r.trim();
+              break;
+            }
+          } catch (e) {
+            lastErr = e;
+          }
+        }
+        if (!inviteActorId) {
           invitePushFeedback.value =
-            e?.message || "Could not find a Graffiti account for that name. Check spelling.";
+            lastErr?.message || "Could not find a Graffiti account for that name. Check spelling.";
+          return;
+        }
+      } else {
+        inviteActorId = normalizeInviteToActorId(inviteUserActorInput.value);
+        if (!inviteActorId) {
+          invitePushFeedback.value =
+            "Use a Graffiti name (e.g. ash), full handle (ash.graffiti.actor), or pick from suggestions.";
           return;
         }
       }
