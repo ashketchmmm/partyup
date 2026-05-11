@@ -106,10 +106,15 @@ export function addKnownChat(allKnownChats, session, chatInfo) {
   };
   if (chatInfo.spectator === true) {
     nextChat.spectator = true;
+  } else if (chatInfo.spectator === undefined && prev?.spectator === true) {
+    // Callers that don't speak to the spectator flag (e.g. routine persist-on-mount) must
+    // not clobber a `spectator: true` set by the home "Spectate" flow. Only `spectator: false`
+    // explicitly clears the flag (used by Leave Chat / Join as Player).
+    nextChat.spectator = true;
   }
   if (existingIndex >= 0) {
     const merged = { ...userKnownChats[existingIndex], ...nextChat };
-    if (chatInfo.spectator !== true) {
+    if (chatInfo.spectator === false) {
       delete merged.spectator;
     }
     userKnownChats[existingIndex] = merged;

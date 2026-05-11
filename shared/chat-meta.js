@@ -243,22 +243,15 @@ export function membershipBaselinePublished(createObject, messageObjects, actorI
 
 /**
  * Baseline for "was I in the session before this kick?" on the kicked client.
- * Join/create only is too strict (users can be present from chat without a stored partyupJoin row).
- * Presence roster kick filtering still uses {@link membershipBaselinePublished} only.
+ *
+ * Uses the join/create baseline only — NOT the latest non-leave message — because the kicked
+ * user's own messages keep flowing in the window before the host's kick Update reaches them,
+ * and any of those messages would extend the baseline past the kick timestamp and silently
+ * cancel the kick. The caller falls back to local `enteredAt` when the join ping has not yet
+ * been discovered.
  */
 export function kickSessionBaselinePublished(createObject, messageObjects, actorId) {
-  const joinBaseline = membershipBaselinePublished(createObject, messageObjects, actorId);
-  const id = String(actorId || "").trim();
-  if (!id) return joinBaseline;
-  let activityMax = 0;
-  for (const m of messageObjects) {
-    if (String(m.actor || "").trim() !== id) continue;
-    const v = m.value || {};
-    if (v.partyupLeave) continue;
-    const pub = Number(v.published) || 0;
-    if (pub > activityMax) activityMax = pub;
-  }
-  return Math.max(joinBaseline, activityMax);
+  return membershipBaselinePublished(createObject, messageObjects, actorId);
 }
 
 /**

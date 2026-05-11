@@ -572,9 +572,12 @@ function chatSetup(props) {
     const ses = session.value;
     if (!ch || !ses?.actor) return;
     const all = loadAllKnownChats();
+    // Do not pass `spectator` here. This runs on every chat-page mount/refresh, and forcing
+    // `spectator: false` would wipe the flag set by the home "Spectate" button before
+    // `isSpectatorSession` has a chance to settle (which then lets the join-ping watcher
+    // fire and silently push the user past the player cap).
     addKnownChat(all, ses, {
       channel: ch,
-      spectator: false,
       title:
         effectiveChatTitle(chats.value, ch) ||
         lookupKnownChatTitle(ses, ch) ||
@@ -602,9 +605,9 @@ function chatSetup(props) {
       const v = currentChat.value?.value;
       if (!v || v.channel !== channel.value) return;
       const all = loadAllKnownChats();
+      // No `spectator` field — same reasoning as persistKnownChatForCurrentChannel above.
       addKnownChat(all, session.value, {
         channel: channel.value,
-        spectator: false,
         title:
           effectiveChatTitle(chats.value, channel.value) ||
           String(v.title || "").trim() ||
@@ -1119,9 +1122,14 @@ function chatSetup(props) {
       joinBlocked.value,
       isSpectatorSession.value,
       areMessageObjectsLoading.value,
+      // The per-chat message discover often resolves before the lobby (`partyup-26`) discover,
+      // and during that window currentChat is still null — which forces joinBlocked and
+      // isSpectatorSession to false. Without this gate we would post a join ping for a
+      // spectator who arrived at a full room. Wait until the Chat Create is known.
+      currentChat.value?.url,
     ],
-    async ([ch, actor, blocked, spect, loading]) => {
-      if (!ch || !actor || blocked || spect || loading) {
+    async ([ch, actor, blocked, spect, loading, chatUrl]) => {
+      if (!ch || !actor || !chatUrl || blocked || spect || loading) {
         return;
       }
       if (joinPingPostedForChannel.value === ch) return;
@@ -1368,21 +1376,31 @@ function chatSetup(props) {
       baseline: kickSessionBaseline.value,
       enteredAt: roomEnteredAt.value,
       joinPosted: joinPingPostedForChannel.value,
+      participant: currentUserIsParticipant.value,
     }),
     (state) => {
       if (!state.ch || !state.me || kickLeaveHandled) return;
       const kt = state.kicks[state.me];
       if (kt == null || !Number.isFinite(kt)) return;
-      // Do not use joinBlocked here: after a kick, "full room" can flip joinBlocked on before we run — user must still leave.
-      const bl = state.baseline;
-      let kickedSinceSession = false;
-      if (bl > 0) {
-        kickedSinceSession = kt > bl;
-      } else if (state.joinPosted === state.ch && state.enteredAt > 0) {
-        // Join/activity rows not in discover yet — still honor kick after we entered this route.
-        kickedSinceSession = kt > state.enteredAt;
-      }
-      if (!kickedSinceSession) return;
+      // A kick only redirects users who are actually playing in *this* session. If the user
+      // never posted a join ping on this route and is not currently in the participant roster
+      // (e.g. they came in as a spectator, or are a previously-kicked player who returned to
+      // spectate), an old kick timestamp is stale — it was already enforced and should not
+      // bounce them back to the lobby every time they reopen the chat.
+      const inThisSession = state.joinPosted === state.ch;
+      if (!inThisSession && !state.participant) return;
+      // Use the local enteredAt alongside the discovered membership baseline. Without this,
+      // a returning player whose new join ping has not been re-discovered yet would still
+      // have `baseline` pointing at an *older* join ping from before the kick — the kick
+      // would then look "fresh" and re-fire even though they just legitimately rejoined.
+      // Do not use joinBlocked here: after a kick, "full room" can flip joinBlocked on
+      // before we run — the user must still leave.
+      const bl = Math.max(
+        state.baseline,
+        inThisSession && state.enteredAt > 0 ? state.enteredAt : 0,
+      );
+      if (bl <= 0) return;
+      if (kt <= bl) return;
       kickLeaveHandled = true;
       leaveChat();
     },
