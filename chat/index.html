@@ -79,7 +79,8 @@
                     v-if="participantCount >= currentChatPlayers && !joinAsPlayerBusy"
                     class="sidebar-hint-small sidebar-spectator-slot-hint"
                 >
-                    No open player slots. This unlocks when someone leaves.
+                    No open player slots. One opens when a player uses Leave Chat (removes from Joined Chats) or
+                    the host kicks or bans someone.
                 </p>
                 <button type="button" class="leave-chat" @click="leaveChat()">Back to Lobby</button>
             </template>
@@ -551,14 +552,14 @@
                     Change Max Number of Players
                     <input
                         type="number"
-                        :min="settingsMinPlayers"
+                        :min="PARTYUP_MIN_MAX_PLAYERS"
                         :max="PARTYUP_MAX_PLAYERS"
                         v-model.number="settingsMaxPlayers"
                     />
                 </label>
                 <p class="overlay-hint">
-                    Minimum is <strong>{{ settingsMinPlayers }}</strong> (players already in this chat).
-                    Maximum is <strong>{{ PARTYUP_MAX_PLAYERS }}</strong>.
+                    To save, the limit must be at least
+                    <strong>{{ participantCount }}</strong> (players currently in this chat).
                 </p>
                 <label class="overlay-checkbox-label">
                     <span>Hide invite</span>

@@ -17,6 +17,7 @@ import {
 import {
   PARTYUP_GAME_OPTIONS,
   PARTYUP_MAX_PLAYERS,
+  PARTYUP_MIN_MAX_PLAYERS,
   PARTYUP_PLAYER_RECENT_ACTIVITY_MS,
   clampPlayerCap,
   createForChannel,
@@ -470,6 +471,15 @@ function chatSetup(props) {
 
   const currentChat = computed(() => createForChannel(chats.value, channel.value));
 
+  const isChatCreator = computed(
+    () =>
+      Boolean(
+        session.value?.actor &&
+          currentChat.value?.actor &&
+          session.value.actor === currentChat.value.actor,
+      ),
+  );
+
   const currentChatName = computed(() => {
     const fromObjects =
       channel.value && chats.value.length
@@ -572,10 +582,8 @@ function chatSetup(props) {
     const ses = session.value;
     if (!ch || !ses?.actor) return;
     const all = loadAllKnownChats();
-    // Do not pass `spectator` here. This runs on every chat-page mount/refresh, and forcing
-    // `spectator: false` would wipe the flag set by the home "Spectate" button before
-    // `isSpectatorSession` has a chance to settle (which then lets the join-ping watcher
-    // fire and silently push the user past the player cap).
+    // For non-hosts, omit `spectator` so routine persist does not wipe the home "Spectate" flag
+    // before `isSpectatorSession` settles. Hosts are never spectators — always clear that flag.
     addKnownChat(all, ses, {
       channel: ch,
       title:
@@ -584,6 +592,7 @@ function chatSetup(props) {
         defaultKnownChatTitle(ch),
       players: lookupKnownChatPlayers(ses, ch),
       game: effectiveGame(chats.value, ch),
+      ...(isChatCreator.value ? { spectator: false } : {}),
     });
   }
 
@@ -605,7 +614,6 @@ function chatSetup(props) {
       const v = currentChat.value?.value;
       if (!v || v.channel !== channel.value) return;
       const all = loadAllKnownChats();
-      // No `spectator` field — same reasoning as persistKnownChatForCurrentChannel above.
       addKnownChat(all, session.value, {
         channel: channel.value,
         title:
@@ -614,11 +622,18 @@ function chatSetup(props) {
           defaultKnownChatTitle(channel.value),
         players: typeof v.players === "number" ? v.players : null,
         game: v.game,
+        ...(isChatCreator.value ? { spectator: false } : {}),
       });
     },
   );
 
-  async function leaveChat() {
+  /**
+   * Navigate to the lobby. By default does not post a leave ping — players keep their roster
+   * slot until "Leave Chat" (remove from Joined Chats), kick, or ban. Pass
+   * `{ releasePlayerSlot: true }` when voluntarily giving up a player slot.
+   */
+  async function leaveChat(options = {}) {
+    const releasePlayerSlot = Boolean(options.releasePlayerSlot);
     try {
       const actor = session.value?.actor;
       const ch = channel.value;
@@ -638,6 +653,7 @@ function chatSetup(props) {
         });
       }
       if (
+        releasePlayerSlot &&
         actor &&
         ch &&
         (participantActors.value.has(actor) || joinPingPostedForChannel.value === ch)
@@ -678,6 +694,19 @@ function chatSetup(props) {
     }
   }
 
+  /** Remove this channel from Joined Chats / local profiles (e.g. host kick or ban mid-session). */
+  function stripUserBookmarksForChannel(chatChannel) {
+    const ch = String(chatChannel ?? "").trim();
+    const ses = session.value;
+    if (!ch || !ses?.actor) return;
+    suppressKnownChatPersist.value = true;
+    removeKnownChat(loadAllKnownChats(), ses, ch);
+    removeProfilesForChannel(ch);
+    if (headerChatLivePlayers.value?.channel === ch) {
+      headerChatLivePlayers.value = null;
+    }
+  }
+
   function forgetChatPermanently() {
     if (!session.value?.actor || !channel.value) return;
     forgetChatError.value = "";
@@ -690,13 +719,8 @@ function chatSetup(props) {
     }
     try {
       const ch = channel.value;
-      suppressKnownChatPersist.value = true;
-      removeKnownChat(loadAllKnownChats(), session.value, ch);
-      removeProfilesForChannel(ch);
-      if (headerChatLivePlayers.value?.channel === ch) {
-        headerChatLivePlayers.value = null;
-      }
-      leaveChat();
+      stripUserBookmarksForChannel(ch);
+      leaveChat({ releasePlayerSlot: true });
     } catch (e) {
       console.error(e);
       forgetChatError.value = e?.message || "Could not update saved chats.";
@@ -739,12 +763,7 @@ function chatSetup(props) {
         await graffiti.delete(u, session.value);
       }
       await graffiti.delete(createObj, session.value);
-      suppressKnownChatPersist.value = true;
-      removeKnownChat(loadAllKnownChats(), session.value, ch);
-      removeProfilesForChannel(ch);
-      if (headerChatLivePlayers.value?.channel === ch) {
-        headerChatLivePlayers.value = null;
-      }
+      stripUserBookmarksForChannel(ch);
       showDeleteChatConfirm.value = false;
       closeOverlays();
       leaveChat();
@@ -1000,6 +1019,7 @@ function chatSetup(props) {
   const isSpectatorSession = computed(() => {
     if (!session.value?.actor || !channel.value || !currentChat.value) return false;
     if (bannedActorsEffective.value.includes(session.value.actor)) return false;
+    if (isChatCreator.value) return false;
     if (currentUserIsParticipant.value) return false;
     if (knownChatSpectatorStored.value) return true;
     return roomIsFull.value && spectatingEnabledEffective.value;
@@ -1012,6 +1032,7 @@ function chatSetup(props) {
   const showSpectatorChrome = computed(() => {
     if (!session.value?.actor || !channel.value || !currentChat.value) return false;
     if (bannedActorsEffective.value.includes(session.value.actor)) return false;
+    if (isChatCreator.value) return false;
     if (currentUserIsParticipant.value) return false;
     if (!spectatingEnabledEffective.value) return false;
     return areMessageObjectsLoading.value || isSpectatorSession.value;
@@ -1040,6 +1061,24 @@ function chatSetup(props) {
       if (lookupKnownChatSpectator(session.value, s.ch)) return;
       const all = loadAllKnownChats();
       addKnownChat(all, session.value, { channel: s.ch, spectator: true });
+      knownChatStorageRevision.value++;
+    },
+    { immediate: true },
+  );
+
+  /** Hosts are never spectators; clear a mistaken local spectator bookmark from older builds. */
+  watch(
+    () => ({
+      ch: channel.value,
+      actor: session.value?.actor,
+      url: currentChat.value?.url,
+      isOwner: isChatCreator.value,
+    }),
+    (s) => {
+      if (!s.ch || !s.actor || !s.url || !s.isOwner) return;
+      if (!lookupKnownChatSpectator(session.value, s.ch)) return;
+      const all = loadAllKnownChats();
+      addKnownChat(all, session.value, { channel: s.ch, spectator: false });
       knownChatStorageRevision.value++;
     },
     { immediate: true },
@@ -1163,15 +1202,6 @@ function chatSetup(props) {
         console.error(e);
       }
     },
-  );
-
-  const isChatCreator = computed(
-    () =>
-      Boolean(
-        session.value?.actor &&
-          currentChat.value?.actor &&
-          session.value.actor === currentChat.value.actor,
-      ),
   );
 
   const showSidebarInviteSection = computed(() => isChatCreator.value || !inviteLockedEffective.value);
@@ -1402,6 +1432,7 @@ function chatSetup(props) {
       if (bl <= 0) return;
       if (kt <= bl) return;
       kickLeaveHandled = true;
+      stripUserBookmarksForChannel(state.ch);
       leaveChat();
     },
   );
@@ -1411,10 +1442,9 @@ function chatSetup(props) {
     // Opening the link while already banned keeps roomEnteredAt at 0 — only redirect if we had joined first.
     if (roomEnteredAt.value <= 0) return;
     banLeaveHandled = true;
+    stripUserBookmarksForChannel(channel.value);
     leaveChat();
   });
-
-  const settingsMinPlayers = computed(() => Math.max(1, participantCount.value));
 
   const sortedMessageObjects = computed(() => {
     return messageObjects.value.toSorted((a, b) => {
@@ -2503,7 +2533,7 @@ function chatSetup(props) {
     selectedBotcRoleDetail,
     botcRolesForSelect,
     PARTYUP_MAX_PLAYERS,
-    settingsMinPlayers,
+    PARTYUP_MIN_MAX_PLAYERS,
     channel,
     chatLayoutNarrow,
     chatSettingsExpanded,

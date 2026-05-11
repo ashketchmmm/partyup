@@ -1,6 +1,9 @@
 /** Hard cap for max players on create, settings, and join logic. */
 export const PARTYUP_MAX_PLAYERS = 100;
 
+/** Minimum allowed "max players" (solo room: host is the only player slot; room is full for others unless spectating). */
+export const PARTYUP_MIN_MAX_PLAYERS = 1;
+
 /**
  * See Players roster: mark someone as recently active if their latest message is newer than this.
  * There is no separate presence channel — leaving the page does not remove you from the participant set.
@@ -9,7 +12,7 @@ export const PARTYUP_PLAYER_RECENT_ACTIVITY_MS = 5 * 60 * 1000;
 
 export function clampPlayerCap(raw) {
   const n = Math.floor(Number(raw));
-  if (!Number.isFinite(n) || n < 1) return 1;
+  if (!Number.isFinite(n) || n < PARTYUP_MIN_MAX_PLAYERS) return PARTYUP_MIN_MAX_PLAYERS;
   return Math.min(PARTYUP_MAX_PLAYERS, n);
 }
 
@@ -59,10 +62,13 @@ export function latestUpdateForChannel(objects, channelId) {
 export function effectiveMaxPlayers(objects, channelId) {
   const create = createForChannel(objects, channelId);
   const latest = latestUpdateForChannel(objects, channelId);
-  const fromCreate = Math.max(1, Math.floor(Number(create?.value?.players)) || 1);
+  const fromCreate = Math.max(
+    PARTYUP_MIN_MAX_PLAYERS,
+    Math.floor(Number(create?.value?.players)) || PARTYUP_MIN_MAX_PLAYERS,
+  );
   const fromUpdate = latest?.value?.players;
   if (typeof fromUpdate === "number" && Number.isFinite(fromUpdate)) {
-    return clampPlayerCap(Math.max(1, Math.floor(fromUpdate)));
+    return clampPlayerCap(Math.max(PARTYUP_MIN_MAX_PLAYERS, Math.floor(fromUpdate)));
   }
   return clampPlayerCap(fromCreate);
 }
@@ -256,7 +262,9 @@ export function kickSessionBaselinePublished(createObject, messageObjects, actor
 
 /**
  * Actors currently "in" the room for player list + capacity.
- * Latest leave ping must be older than the latest join ping / chat message / creator create time.
+ * A `partyupLeave` ping is posted only when someone gives up a player slot (e.g. removes the chat
+ * from Joined Chats); going "Back to Lobby" does not post leave, so roster spots persist until then,
+ * kick, or ban. Latest leave ping must be older than the latest join ping / chat message / creator create time.
  * @param {Record<string, number>|null|undefined} kickTimestampsByActor optional map from actor id → kick time (ms); actors kicked since their last join ping are excluded until they send a new partyupJoin after that kick.
  */
 export function presentParticipantActorSet(createObject, messageObjects, kickTimestampsByActor) {

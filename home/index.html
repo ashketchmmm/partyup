@@ -128,7 +128,7 @@
                             <b>Players:</b>
                             <input
                                 type="number"
-                                min="1"
+                                :min="PARTYUP_MIN_MAX_PLAYERS"
                                 :max="PARTYUP_MAX_PLAYERS"
                                 v-model.number="chatPlayers"
                             />

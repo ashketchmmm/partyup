@@ -27,6 +27,7 @@ import {
 import {
   PARTYUP_GAME_OPTIONS,
   PARTYUP_MAX_PLAYERS,
+  PARTYUP_MIN_MAX_PLAYERS,
   defaultEnabledGameToolsForGame,
   effectiveMaxPlayers,
   effectiveChatTitle,
@@ -581,6 +582,7 @@ function setup() {
     isRandomizing,
     PARTYUP_GAME_OPTIONS,
     PARTYUP_MAX_PLAYERS,
+    PARTYUP_MIN_MAX_PLAYERS,
     isGlobalChatFull,
     isGlobalChatClosedToJoin,
     globalChatDisplayTitleBase,
