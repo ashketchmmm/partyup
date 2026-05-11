@@ -104,14 +104,14 @@ export function addKnownChat(allKnownChats, session, chatInfo) {
         ? { game: String(prev.game).trim() }
         : {}),
   };
-  if (chatInfo.spectator !== undefined) {
-    if (chatInfo.spectator) nextChat.spectator = true;
-  } else if (prev?.spectator) {
+  if (chatInfo.spectator === true) {
     nextChat.spectator = true;
   }
   if (existingIndex >= 0) {
     const merged = { ...userKnownChats[existingIndex], ...nextChat };
-    if (chatInfo.spectator !== undefined && !chatInfo.spectator) delete merged.spectator;
+    if (chatInfo.spectator !== true) {
+      delete merged.spectator;
+    }
     userKnownChats[existingIndex] = merged;
   } else {
     userKnownChats.unshift(nextChat);

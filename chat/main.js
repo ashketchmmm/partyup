@@ -36,6 +36,7 @@ import {
   PARTYUP_DEFAULT_ENABLED_GAME_TOOLS,
   listChatUpdates,
   presentParticipantActorSet,
+  kickSessionBaselinePublished,
   isPartyupPresenceMessage,
 } from "../shared/chat-meta.js";
 import { getMainProfile } from "../shared/main-profile.js";
@@ -573,6 +574,7 @@ function chatSetup(props) {
     const all = loadAllKnownChats();
     addKnownChat(all, ses, {
       channel: ch,
+      spectator: false,
       title:
         effectiveChatTitle(chats.value, ch) ||
         lookupKnownChatTitle(ses, ch) ||
@@ -602,6 +604,7 @@ function chatSetup(props) {
       const all = loadAllKnownChats();
       addKnownChat(all, session.value, {
         channel: channel.value,
+        spectator: false,
         title:
           effectiveChatTitle(chats.value, channel.value) ||
           String(v.title || "").trim() ||
@@ -631,7 +634,11 @@ function chatSetup(props) {
           game: effectiveGame(chats.value, ch),
         });
       }
-      if (actor && ch && participantActors.value.has(actor)) {
+      if (
+        actor &&
+        ch &&
+        (participantActors.value.has(actor) || joinPingPostedForChannel.value === ch)
+      ) {
         await postPartyupLeavePing();
       }
     } catch (e) {
@@ -898,11 +905,22 @@ function chatSetup(props) {
     true,
   );
 
-  /** Actors currently in the room (join ping / messages vs leave ping), excluding bans. */
+  /** Actors currently in the room (join ping / messages vs leave ping), excluding bans and session kicks. */
   const participantActors = computed(() => {
-    const raw = presentParticipantActorSet(currentChat.value, messageObjects.value);
+    const raw = presentParticipantActorSet(
+      currentChat.value,
+      messageObjects.value,
+      kickTimestampsEffective.value,
+    );
     for (const id of bannedActorsEffective.value) raw.delete(id);
     return raw;
+  });
+
+  /** Latest join/create or any non-leave activity — compared to host kick timestamps (see shared/chat-meta). */
+  const kickSessionBaseline = computed(() => {
+    const me = session.value?.actor;
+    if (!me || !currentChat.value) return 0;
+    return kickSessionBaselinePublished(currentChat.value, messageObjects.value, me);
   });
 
   const participantCount = computed(() => participantActors.value.size);
@@ -1003,12 +1021,19 @@ function chatSetup(props) {
       full: roomIsFull.value,
       part: currentUserIsParticipant.value,
       actor: session.value?.actor,
+      msgsReady: !areMessageObjectsLoading.value,
+      owner:
+        Boolean(
+          session.value?.actor &&
+            currentChat.value?.actor &&
+            session.value.actor === currentChat.value.actor,
+        ),
       banned:
         Boolean(session.value?.actor) &&
         bannedActorsEffective.value.includes(session.value.actor),
     }),
     (s) => {
-      if (!s.ch || !s.actor || s.banned || s.part || !s.spec || !s.full) return;
+      if (!s.ch || !s.actor || s.banned || s.part || !s.spec || !s.full || !s.msgsReady || s.owner) return;
       if (lookupKnownChatSpectator(session.value, s.ch)) return;
       const all = loadAllKnownChats();
       addKnownChat(all, session.value, { channel: s.ch, spectator: true });
@@ -1319,8 +1344,11 @@ function chatSetup(props) {
   }
 
   let kickLeaveHandled = false;
+  /** Same idea as kick: once host bans you mid-session, leave the chat route (stale UI could still send). */
+  let banLeaveHandled = false;
   watch(channel, () => {
     kickLeaveHandled = false;
+    banLeaveHandled = false;
     roomEnteredAt.value = 0;
   });
 
@@ -1336,19 +1364,37 @@ function chatSetup(props) {
     () => ({
       ch: channel.value,
       me: session.value?.actor,
-      blocked: joinBlocked.value,
       kicks: kickTimestampsEffective.value,
-      entered: roomEnteredAt.value,
+      baseline: kickSessionBaseline.value,
+      enteredAt: roomEnteredAt.value,
+      joinPosted: joinPingPostedForChannel.value,
     }),
     (state) => {
-      if (!state.ch || !state.me || state.blocked || kickLeaveHandled) return;
+      if (!state.ch || !state.me || kickLeaveHandled) return;
       const kt = state.kicks[state.me];
-      if (kt != null && state.entered > 0 && kt > state.entered) {
-        kickLeaveHandled = true;
-        leaveChat();
+      if (kt == null || !Number.isFinite(kt)) return;
+      // Do not use joinBlocked here: after a kick, "full room" can flip joinBlocked on before we run — user must still leave.
+      const bl = state.baseline;
+      let kickedSinceSession = false;
+      if (bl > 0) {
+        kickedSinceSession = kt > bl;
+      } else if (state.joinPosted === state.ch && state.enteredAt > 0) {
+        // Join/activity rows not in discover yet — still honor kick after we entered this route.
+        kickedSinceSession = kt > state.enteredAt;
       }
+      if (!kickedSinceSession) return;
+      kickLeaveHandled = true;
+      leaveChat();
     },
   );
+
+  watch(joinBlockedKind, (kind) => {
+    if (kind !== "banned" || banLeaveHandled) return;
+    // Opening the link while already banned keeps roomEnteredAt at 0 — only redirect if we had joined first.
+    if (roomEnteredAt.value <= 0) return;
+    banLeaveHandled = true;
+    leaveChat();
+  });
 
   const settingsMinPlayers = computed(() => Math.max(1, participantCount.value));
 
@@ -1998,6 +2044,7 @@ function chatSetup(props) {
   }
 
   function attemptSendMessage() {
+    if (joinBlocked.value) return;
     if (showSpectatorChrome.value || areMessageObjectsLoading.value) return;
     if (isSending.value) return;
     if (!myMessage.value.trim()) {
@@ -2221,12 +2268,25 @@ function chatSetup(props) {
     invitePushBusy.value = true;
     try {
       let inviteActorId = "";
-      if (typeof graffiti.handleToActor === "function") {
+      const trimmedInput = inviteUserActorInput.value.trim();
+      const preNorm = normalizeInviteToActorId(trimmedInput);
+
+      /** Suggestion list stores real actor ids — never run those through handleToActor (UUID/opaque fails). */
+      const copRow = coplayersForInviteSidebar.value.find(
+        (r) =>
+          String(r.actorId || "").trim() === trimmedInput ||
+          String(r.actorId || "").trim() === rawIn ||
+          normalizeInviteToActorId(String(r.actorId || "")) === preNorm,
+      );
+      if (copRow?.actorId) {
+        inviteActorId = String(copRow.actorId).trim();
+      } else if (typeof graffiti.handleToActor === "function") {
         const candidates = [];
         const pushCand = (x) => {
           const s = String(x ?? "").trim();
           if (s && !candidates.includes(s)) candidates.push(s);
         };
+        pushCand(preNorm);
         pushCand(normalizeInviteToActorId(inviteUserActorInput.value));
         pushCand(normalizePartyupActorHandle(inviteUserActorInput.value));
         pushCand(rawIn.toLowerCase());
@@ -2234,6 +2294,7 @@ function chatSetup(props) {
 
         let lastErr = null;
         for (const c of candidates) {
+          if (!c) continue;
           try {
             const r = await graffiti.handleToActor(c);
             if (typeof r === "string" && r.trim()) {
@@ -2244,13 +2305,16 @@ function chatSetup(props) {
             lastErr = e;
           }
         }
+        if (!inviteActorId && preNorm) {
+          inviteActorId = preNorm;
+        }
         if (!inviteActorId) {
           invitePushFeedback.value =
             lastErr?.message || "Could not find a Graffiti account for that name. Check spelling.";
           return;
         }
       } else {
-        inviteActorId = normalizeInviteToActorId(inviteUserActorInput.value);
+        inviteActorId = preNorm;
         if (!inviteActorId) {
           invitePushFeedback.value =
             "Use a Graffiti name (e.g. ash), full handle (ash.graffiti.actor), or pick from suggestions.";

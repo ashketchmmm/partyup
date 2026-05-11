@@ -220,10 +220,53 @@ export function isPartyupPresenceMessage(m) {
 }
 
 /**
+ * Latest "membership" timestamp for an actor: chat Create (owner) and partyupJoin pings only.
+ * Used so a host kick (Chat Update kickTimestamps) cannot be overridden by ordinary messages — only a new join ping
+ * after the kick restores presence.
+ */
+export function membershipBaselinePublished(createObject, messageObjects, actorId) {
+  const id = String(actorId || "").trim();
+  if (!id) return 0;
+  let maxPub = 0;
+  const creator = createObject?.actor;
+  const createPub = Number(createObject?.value?.published) || 0;
+  if (creator && String(creator).trim() === id && createPub > maxPub) maxPub = createPub;
+  for (const m of messageObjects) {
+    if (String(m.actor || "").trim() !== id) continue;
+    const v = m.value || {};
+    if (!v.partyupJoin) continue;
+    const pub = Number(v.published) || 0;
+    if (pub > maxPub) maxPub = pub;
+  }
+  return maxPub;
+}
+
+/**
+ * Baseline for "was I in the session before this kick?" on the kicked client.
+ * Join/create only is too strict (users can be present from chat without a stored partyupJoin row).
+ * Presence roster kick filtering still uses {@link membershipBaselinePublished} only.
+ */
+export function kickSessionBaselinePublished(createObject, messageObjects, actorId) {
+  const joinBaseline = membershipBaselinePublished(createObject, messageObjects, actorId);
+  const id = String(actorId || "").trim();
+  if (!id) return joinBaseline;
+  let activityMax = 0;
+  for (const m of messageObjects) {
+    if (String(m.actor || "").trim() !== id) continue;
+    const v = m.value || {};
+    if (v.partyupLeave) continue;
+    const pub = Number(v.published) || 0;
+    if (pub > activityMax) activityMax = pub;
+  }
+  return Math.max(joinBaseline, activityMax);
+}
+
+/**
  * Actors currently "in" the room for player list + capacity.
  * Latest leave ping must be older than the latest join ping / chat message / creator create time.
+ * @param {Record<string, number>|null|undefined} kickTimestampsByActor optional map from actor id → kick time (ms); actors kicked since their last join ping are excluded until they send a new partyupJoin after that kick.
  */
-export function presentParticipantActorSet(createObject, messageObjects) {
+export function presentParticipantActorSet(createObject, messageObjects, kickTimestampsByActor) {
   const historical = participantActorSet(createObject, messageObjects);
   const leaveTs = new Map();
   const activeTs = new Map();
@@ -269,5 +312,17 @@ export function presentParticipantActorSet(createObject, messageObjects) {
     const a = activeTs.get(actor) ?? 0;
     if (a > l) out.add(actor);
   }
+
+  if (kickTimestampsByActor && typeof kickTimestampsByActor === "object" && !Array.isArray(kickTimestampsByActor)) {
+    for (const actor of [...out]) {
+      const rawK = kickTimestampsByActor[actor];
+      if (rawK == null) continue;
+      const kt = Number(rawK);
+      if (!Number.isFinite(kt)) continue;
+      const baseline = membershipBaselinePublished(createObject, messageObjects, actor);
+      if (baseline <= kt) out.delete(actor);
+    }
+  }
+
   return out;
 }

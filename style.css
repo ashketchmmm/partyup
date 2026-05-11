@@ -742,11 +742,17 @@ html {
     background: #fff;
   }
 
-  .chat-global-item-full .chat-link,
+  /* Full + no spectating: button is :disabled — not-allowed. Full + spectating: still clickable. */
   .chat-global-item-full .chat-link:disabled {
     opacity: 0.55;
     filter: grayscale(0.2);
     cursor: not-allowed;
+  }
+
+  .chat-global-item-full .chat-link:not(:disabled) {
+    cursor: pointer;
+    opacity: 1;
+    filter: none;
   }
 
   .chat-global-full-tag {

@@ -34,6 +34,7 @@ import {
   effectiveSpectatingEnabled,
   presentParticipantActorSet,
   effectiveBannedActors,
+  effectiveKickTimestamps,
   clampPlayerCap,
 } from "../shared/chat-meta.js";
 import { extractChatIdFromInviteInput } from "../shared/chat-invite.js";
@@ -346,7 +347,7 @@ function setup() {
       const cid = chat.value.channel;
       if (!cid) continue;
       const msgs = globalPresenceMessages.value.filter((m) => m.channels?.[0] === cid);
-      const rawPresent = presentParticipantActorSet(chat, msgs);
+      const rawPresent = presentParticipantActorSet(chat, msgs, effectiveKickTimestamps(chats.value, cid));
       const banned = new Set(effectiveBannedActors(chats.value, cid));
       const normalized = new Set();
       for (const a of rawPresent) {
@@ -388,10 +389,10 @@ function setup() {
     const me = session.value?.actor;
     if (!cid || !me || !effectiveSpectatingEnabled(chats.value, cid)) return base;
     if (!isGlobalChatFull(chat)) return base;
+    if (isOwnedGlobalChat(chat)) return base;
     const meId = normalizePartyupActor(me);
     if (meId && globalChatOccupancy.value.get(cid)?.has(meId)) return base;
-    const row = knownChats.value.find((c) => c.channel === cid);
-    if (row?.spectator) return base;
+    if (knownChats.value.some((c) => c.channel === cid)) return base;
     return `${base} [Spectating Enabled]`;
   }
 
@@ -482,12 +483,23 @@ function setup() {
 
   function changeChat(chat) {
     if (isGlobalChatClosedToJoin(chat)) return;
+    const cid = String(chat?.value?.channel || "").trim();
+    const me = session.value?.actor;
+    const meId = normalizePartyupActor(me);
+    const openAsSpectator =
+      Boolean(cid) &&
+      !isOwnedGlobalChat(chat) &&
+      isGlobalChatFull(chat) &&
+      effectiveSpectatingEnabled(chats.value, cid) &&
+      !(meId && globalChatOccupancy.value.get(cid)?.has(meId));
     addKnownChat({
       channel: chat.value.channel,
       title: chat.value.title,
       players: chat.value.players,
       game: chat.value.game,
+      ...(openAsSpectator ? { spectator: true } : {}),
     });
+    allKnownChats.value = loadAllKnownChats();
     goToChat(chat.value.channel);
   }
 
