@@ -97,7 +97,8 @@ export const PARTYUP_GAME_TOOL_OPTIONS = [
   { id: "botc", label: "BoTC Role Tracker" },
 ];
 
-export const PARTYUP_DEFAULT_ENABLED_GAME_TOOLS = [...PARTYUP_GAME_TOOL_IDS];
+/** Fallback when channel/game is unknown (same as Other → dice only). */
+export const PARTYUP_DEFAULT_ENABLED_GAME_TOOLS = ["dice"];
 
 /** Valid tool ids only; may be empty if the host disabled every tool. */
 export function normalizeEnabledGameTools(raw) {
@@ -114,7 +115,7 @@ export function normalizeEnabledGameTools(raw) {
   return out;
 }
 
-/** Enabled tools from latest Update, else Create, else all three (legacy chats). */
+/** Enabled tools from latest Update, else Create, else inferred from effective game (e.g. Other → dice only). */
 export function effectiveEnabledGameTools(objects, channelId) {
   const latest = latestUpdateForChannel(objects, channelId);
   if (latest?.value != null && Array.isArray(latest.value.enabledGameTools)) {
@@ -124,7 +125,8 @@ export function effectiveEnabledGameTools(objects, channelId) {
   if (create?.value != null && Array.isArray(create.value.enabledGameTools)) {
     return normalizeEnabledGameTools(create.value.enabledGameTools);
   }
-  return [...PARTYUP_DEFAULT_ENABLED_GAME_TOOLS];
+  const game = effectiveGame(objects, channelId);
+  return [...defaultEnabledGameToolsForGame(game)];
 }
 
 /**

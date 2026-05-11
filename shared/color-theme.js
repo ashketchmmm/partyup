@@ -84,6 +84,8 @@ export function applyColorTheme(theme) {
   root.style.setProperty("--partyup-accent", t.accent);
   root.style.setProperty("--partyup-on-accent", foregroundForBackground(t.accent));
   root.style.setProperty("--partyup-on-accent-hover", foregroundForBackground(accentHoverRgb(t.accent)));
+  /** Text/icons on the header bar (follows header luminance, not accent). */
+  root.style.setProperty("--partyup-on-header", foregroundForBackground(t.headerBg));
 }
 
 export function initColorThemeFromStorage() {

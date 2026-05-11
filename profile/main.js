@@ -1,6 +1,11 @@
 import { ref, computed, watch } from "vue";
-import { useGraffitiSession } from "@graffiti-garden/wrapper-vue";
-import { getMainProfile, saveMainProfile } from "../shared/main-profile.js";
+import { useGraffiti, useGraffitiSession } from "@graffiti-garden/wrapper-vue";
+import {
+  getMainProfile,
+  saveMainProfile,
+  shortNameFromGraffitiActor,
+  hasSavedMainProfileName,
+} from "../shared/main-profile.js";
 import {
   loadColorTheme,
   saveColorTheme,
@@ -10,6 +15,7 @@ import {
 import { UserAvatar } from "../components/user-avatar.js";
 
 function setup() {
+  const graffiti = useGraffiti();
   const session = useGraffitiSession();
   const displayName = ref("");
   const avatarUrl = ref("");
@@ -33,13 +39,36 @@ function setup() {
     accent.value = t.accent;
   }
 
+  async function hydrateDisplayNameFromActor() {
+    if (!session.value?.actor || hasSavedMainProfileName(session.value)) return;
+    if (typeof graffiti.actorToHandle !== "function") return;
+    try {
+      const handle = await graffiti.actorToHandle(session.value.actor);
+      const h = typeof handle === "string" ? handle.trim() : "";
+      if (!h) return;
+      const short = shortNameFromGraffitiActor(h);
+      if (short) {
+        displayName.value = short;
+        return;
+      }
+      if (h.includes(".")) {
+        displayName.value = h.split(".")[0] || displayName.value;
+      } else {
+        displayName.value = h;
+      }
+    } catch (e) {
+      console.warn(e);
+    }
+  }
+
   watch(
     () => session.value?.actor,
-    () => {
+    async () => {
       savedHint.value = "";
       paletteSavedHint.value = "";
       loadForm();
       loadPaletteForm();
+      await hydrateDisplayNameFromActor();
     },
     { immediate: true },
   );
@@ -66,6 +95,9 @@ function setup() {
       accent: accent.value,
     });
   }
+
+  /** Re-run theme whenever palette refs change so `--partyup-on-header` stays in sync with `headerBg`. */
+  watch([pageBg, headerBg, accent], previewColorPalette);
 
   function saveColorPalette() {
     if (!session.value) return;
@@ -102,7 +134,6 @@ function setup() {
     headerBg,
     accent,
     paletteSavedHint,
-    previewColorPalette,
     saveColorPalette,
     resetColorPalette,
   };

@@ -11,6 +11,7 @@ html {
     --partyup-button-border: color-mix(in srgb, var(--partyup-header-bg) 25%, #111e3b);
     --partyup-on-accent: #0a0a0a;
     --partyup-on-accent-hover: #0a0a0a;
+    --partyup-on-header: #ffffff;
   }
 
   body {
@@ -31,7 +32,7 @@ html {
   
   header {
       background-color: var(--partyup-header-bg);
-    color: white;
+    color: var(--partyup-on-header);
       width: auto;
       padding: 8px;
       box-sizing: border-box;
@@ -53,21 +54,22 @@ html {
   .header-home-nav-link {
     padding: 0.45rem 0.85rem;
     border-radius: 8px;
-    border: 2px solid rgba(213, 230, 255, 0.45);
-    background-color: rgba(242, 245, 255, 0.12);
-    color: var(--partyup-accent);
+    border: 2px solid color-mix(in srgb, var(--partyup-on-header) 42%, transparent);
+    background-color: color-mix(in srgb, var(--partyup-on-header) 14%, transparent);
+    color: var(--partyup-on-header);
     font-weight: 600;
     text-decoration: none;
   }
 
   .header-home-nav-link:hover {
-    filter: brightness(1.12);
+    filter: none;
+    background-color: color-mix(in srgb, var(--partyup-on-header) 22%, transparent);
   }
 
   .header-home-nav-link.header-home-nav-link--active {
-    background-color: #f2f5ff;
-    color: #0f1a56;
-    border-color: #f2f5ff;
+    background-color: var(--partyup-on-header);
+    color: var(--partyup-header-bg);
+    border-color: var(--partyup-on-header);
   }
 
   .header-actions {
@@ -236,7 +238,7 @@ html {
     width: 0.075em;
     height: 0.95em;
     margin-left: 0.06em;
-    background: linear-gradient(to bottom, var(--partyup-accent), var(--partyup-accent-deep));
+    background-color: var(--partyup-on-header);
     border-radius: 1px;
     animation: header-chat-caret-blink 0.5s step-end infinite;
   }
@@ -259,18 +261,13 @@ html {
   .header_h1 .header-link:hover {
     filter: none;
     text-decoration: underline;
-    text-decoration-color: rgba(213, 230, 255, 0.9);
+    text-decoration-color: color-mix(in srgb, var(--partyup-on-header) 88%, transparent);
     text-underline-offset: 0.18em;
   }
   
   .header_h1 {
     font-family: "Pixelify Sans", sans-serif;
-    background: linear-gradient(to right, var(--partyup-accent), var(--partyup-accent-deep));
-    
-    -webkit-background-clip: text;
-    background-clip: text;
-    
-    color: transparent;
+    color: var(--partyup-on-header);
   }
   
   h2 {
@@ -293,6 +290,15 @@ html {
     border: 2px solid var(--partyup-button-border);
     color: var(--partyup-on-accent);
     background-color: var(--partyup-accent);
+  }
+
+  /*
+   * Generic `button {}` sets accent-based text color. Header title (chat route) is a button —
+   * force PartyUp / chat title to follow header luminance via --partyup-on-header (updated when
+   * headerBg changes in shared/color-theme.js applyColorTheme).
+   */
+  header .header_h1 .header-link {
+    color: var(--partyup-on-header);
   }
   
   .delete_button {
@@ -409,20 +415,53 @@ html {
   }
 
   .profile-color-row {
+    display: flex;
     flex-direction: row;
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
   }
 
-  .profile-color-row input[type="color"] {
+  .profile-color-name-label {
+    flex: 0 1 auto;
+    min-width: 0;
+    font-weight: 600;
+    color: #1a2a5c;
+    cursor: pointer;
+  }
+
+  .profile-color-input {
     width: 3rem;
     height: 2.25rem;
     padding: 0;
+    margin: 0;
     border: 1px solid #8fa2d0;
     border-radius: 8px;
     cursor: pointer;
     flex-shrink: 0;
+    box-sizing: border-box;
+    overflow: hidden;
+    appearance: none;
+    -webkit-appearance: none;
+    background: transparent;
+    vertical-align: middle;
+  }
+
+  .profile-color-input::-webkit-color-swatch-wrapper {
+    padding: 0;
+  }
+
+  .profile-color-input::-webkit-color-swatch {
+    border: none;
+    border-radius: 7px;
+  }
+
+  .profile-color-input::-moz-color-swatch {
+    border: none;
+    border-radius: 7px;
   }
 
   @media (max-width: 720px) {
@@ -1198,6 +1237,8 @@ html {
     background-color: white;
     padding: 3%;
     font-weight: 600;
+    /* Explicit color: do not inherit accent-button `--partyup-on-accent` from global `button {}`. */
+    color: #1a2a5c;
   }
 
 .chat-item-owned .chat-link {
@@ -2466,9 +2507,14 @@ html {
   
   .profile-list-item {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 0.35rem;
     flex-wrap: nowrap;
+  }
+
+  .profile-list-item--editing .profile-select-btn {
+    border-color: #1f6b3a;
+    box-shadow: 0 0 0 1px rgba(31, 107, 58, 0.35);
   }
 
   .profile-select-btn {

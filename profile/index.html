@@ -35,23 +35,39 @@
             changes below!
         </p>
         <form class="profile-page-form stack" @submit.prevent="saveColorPalette()">
-            <label class="stack-label profile-color-row">
-                <span>Background</span>
-                <input type="color" v-model="pageBg" @input="previewColorPalette" />
-            </label>
-            <label class="stack-label profile-color-row">
-                <span>Header</span>
-                <input type="color" v-model="headerBg" @input="previewColorPalette" />
-            </label>
-            <label class="stack-label profile-color-row">
-                <span>Buttons &amp; Accents</span>
-                <input type="color" v-model="accent" @input="previewColorPalette" />
-            </label>
+            <div class="profile-color-row">
+                <label class="profile-color-name-label" for="palette-page-bg">Background</label>
+                <input
+                    id="palette-page-bg"
+                    class="profile-color-input"
+                    type="color"
+                    v-model="pageBg"
+                />
+            </div>
+            <div class="profile-color-row">
+                <label class="profile-color-name-label" for="palette-header-bg">Header</label>
+                <input
+                    id="palette-header-bg"
+                    class="profile-color-input"
+                    type="color"
+                    v-model="headerBg"
+                />
+            </div>
+            <div class="profile-color-row">
+                <label class="profile-color-name-label" for="palette-accent">Buttons &amp; Accents</label>
+                <input
+                    id="palette-accent"
+                    class="profile-color-input"
+                    type="color"
+                    v-model="accent"
+                />
+            </div>
             <div class="profile-page-actions profile-color-palette-actions">
                 <div class="profile-palette-button-row">
                     <button type="button" @click="resetColorPalette">Reset to Defaults</button>
                     <button type="submit" :disabled="!canSave">Save</button>
                 </div>
+                <br>
                 <span v-if="paletteSavedHint" class="profile-page-saved">{{ paletteSavedHint }}</span>
             </div>
         </form>

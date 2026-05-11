@@ -374,35 +374,58 @@ function chatSetup(props) {
     );
   });
 
-  function selectProfile(profileId) {
+  /** When set, the bottom form edits this profile; when null, the form adds a new profile. */
+  const editingProfileId = ref(null);
+
+  /** Load a profile into the shared name/avatar fields (used for add + edit). */
+  function beginEditProfile(profileId) {
     const profileState = currentProfileState.value;
     if (!profileState) return;
-    if (!profileState.profiles.some((profile) => profile.id === profileId)) return;
+    const p = profileState.profiles.find((profile) => profile.id === profileId);
+    if (!p) return;
     profileState.selectedProfileId = profileId;
+    editingProfileId.value = profileId;
+    newProfileName.value = p.name;
+    newProfileAvatar.value = p.avatar || "";
     saveAllUserProfiles();
-    showProfileMenu.value = false;
   }
 
-  function createProfile() {
+  function cancelProfileDraft() {
+    editingProfileId.value = null;
+    newProfileName.value = "";
+    newProfileAvatar.value = "";
+  }
+
+  function submitProfileForm() {
     const profileState = currentProfileState.value;
     if (!profileState) return;
     const trimmedName = newProfileName.value.trim();
     if (!trimmedName) return;
-    const newProfile = {
-      id: crypto.randomUUID(),
-      name: trimmedName,
-      avatar: newProfileAvatar.value.trim(),
-    };
-    profileState.profiles.unshift(newProfile);
-    profileState.selectedProfileId = newProfile.id;
-    newProfileName.value = "";
-    newProfileAvatar.value = "";
+    const avatar = newProfileAvatar.value.trim();
+    if (editingProfileId.value) {
+      const p = profileState.profiles.find((pr) => pr.id === editingProfileId.value);
+      if (!p) return;
+      p.name = trimmedName;
+      p.avatar = avatar;
+      profileState.selectedProfileId = p.id;
+    } else {
+      const newProfile = {
+        id: crypto.randomUUID(),
+        name: trimmedName,
+        avatar,
+      };
+      profileState.profiles.unshift(newProfile);
+      profileState.selectedProfileId = newProfile.id;
+    }
+    cancelProfileDraft();
     saveAllUserProfiles();
+    showProfileMenu.value = false;
   }
 
   function removeProfile(profileId) {
     const profileState = currentProfileState.value;
     if (!profileState || profileState.profiles.length <= 1) return;
+    if (editingProfileId.value === profileId) cancelProfileDraft();
     profileState.profiles = profileState.profiles.filter((profile) => profile.id !== profileId);
     if (!profileState.profiles.some((profile) => profile.id === profileState.selectedProfileId)) {
       profileState.selectedProfileId = profileState.profiles[0]?.id ?? null;
@@ -411,7 +434,9 @@ function chatSetup(props) {
   }
 
   function toggleProfileMenu() {
-    showProfileMenu.value = !showProfileMenu.value;
+    const nextOpen = !showProfileMenu.value;
+    showProfileMenu.value = nextOpen;
+    if (!nextOpen) cancelProfileDraft();
   }
 
   const partyupChatSchema = {
@@ -628,6 +653,7 @@ function chatSetup(props) {
     rulebookMissingGame.value = "";
     showPlayersDropdown.value = false;
     showProfileMenu.value = false;
+    cancelProfileDraft();
     joinPingPostedForChannel.value = null;
     router.push({ name: "home" });
   }
@@ -1921,6 +1947,7 @@ function chatSetup(props) {
       pmRecipient: replyPrivateRecipient(messageObject, me),
     };
     showProfileMenu.value = false;
+    cancelProfileDraft();
     showPlayersDropdown.value = false;
   }
 
@@ -2428,8 +2455,9 @@ function chatSetup(props) {
     newProfileName,
     newProfileAvatar,
     toggleProfileMenu,
-    selectProfile,
-    createProfile,
+    editingProfileId,
+    beginEditProfile,
+    submitProfileForm,
     removeProfile,
     kickPlayer,
     banPlayer,

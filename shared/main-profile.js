@@ -4,6 +4,26 @@ function ownerKey(session) {
   return session?.actor || "anonymous";
 }
 
+/**
+ * Display short name when `actor` is already a Graffiti handle (`ash.graffiti.actor` → `ash`).
+ * Returns "" if not that shape (opaque ids need {@link Graffiti.actorToHandle}).
+ */
+export function shortNameFromGraffitiActor(actor) {
+  const s = String(actor ?? "").trim();
+  if (!s) return "";
+  const suf = ".graffiti.actor";
+  if (s.toLowerCase().endsWith(suf)) {
+    const base = s.slice(0, -suf.length);
+    return base.trim() || "";
+  }
+  return "";
+}
+
+export function hasSavedMainProfileName(session) {
+  const row = loadAllMainProfiles()[ownerKey(session)];
+  return Boolean(row?.name != null && String(row.name).trim());
+}
+
 export function loadAllMainProfiles() {
   try {
     const raw = localStorage.getItem(MAIN_PROFILE_STORAGE_KEY);
@@ -17,8 +37,10 @@ export function loadAllMainProfiles() {
 
 export function getMainProfile(session) {
   const row = loadAllMainProfiles()[ownerKey(session)];
+  const stored = row?.name != null ? String(row.name).trim() : "";
+  const fromActor = session?.actor ? shortNameFromGraffitiActor(session.actor) : "";
   return {
-    name: (row?.name && String(row.name).trim()) || "Me",
+    name: stored || fromActor || "Me",
     avatar: (row?.avatar && String(row.avatar).trim()) || "",
   };
 }
