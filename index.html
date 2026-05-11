@@ -73,7 +73,7 @@
                 </div>
             </header>
 
-            <main v-if="$graffitiSession.value">
+            <main v-if="$graffitiSession.value" class="main-content" :class="mainContentClass">
                 <router-view></router-view>
             </main>
             <main v-else-if="$graffitiSession.value === null" class="logged-out-main">

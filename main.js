@@ -145,7 +145,16 @@ const app = createApp({
       }
     }
 
-    return { isChatRoute, showHomeNav, headerTitle, displayedChatTitle, onChatTitleClick };
+    const mainContentClass = computed(() => (route.name === "home" ? "main-content--lobby" : ""));
+
+    return {
+      isChatRoute,
+      showHomeNav,
+      headerTitle,
+      displayedChatTitle,
+      onChatTitleClick,
+      mainContentClass,
+    };
   },
 });
 

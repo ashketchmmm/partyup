@@ -86,6 +86,32 @@ html {
     overflow: auto;
   }
 
+  /* Lobby: no page scroll — only Public Chats list scrolls inside its panel */
+  main.main-content--lobby {
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  main.main-content--lobby .home-route-shell {
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  main.main-content--lobby .home-lobby-root {
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
   main.logged-out-main {
     display: flex;
     align-items: flex-start;
@@ -323,7 +349,40 @@ html {
     min-width: 0;
   }
 
-  /* Scroll only on <main>; no nested scrollbar here (was max-height + overflow-y). */
+  .chat-layout.chat-layout--lobby {
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+    margin-bottom: 0;
+    align-items: stretch;
+  }
+
+  .chat-box-joined {
+    min-width: 0;
+    align-self: start;
+  }
+
+  .chat-layout.chat-layout--lobby .chat-box-global {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+    align-self: stretch;
+  }
+
+  .chat-box-global-heading {
+    flex-shrink: 0;
+    margin: 0 0 0.5rem;
+  }
+
+  .chat-box-global-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
   .chat-box-global {
     align-self: start;
     min-width: 0;
@@ -2654,6 +2713,14 @@ html {
   @media (max-width: 900px) {
     .chat-layout {
       grid-template-columns: 1fr;
+    }
+
+    .chat-layout.chat-layout--lobby {
+      grid-template-rows: auto minmax(0, 1fr);
+    }
+
+    .chat-layout.chat-layout--lobby .chat-box-joined {
+      align-self: stretch;
     }
 
     .chat-screen {

@@ -1,5 +1,6 @@
-<section class="chat-layout">
-                <article class="chat-box">
+<div class="home-lobby-root">
+            <section class="chat-layout chat-layout--lobby">
+                <article class="chat-box chat-box-joined">
                     <h2>Joined Chats</h2>
                     <div class="known-chats-heading-row">
                         <button type="button" class="known-chats-create-btn" @click="openCreateChatModal">
@@ -48,30 +49,32 @@
                 </article>
 
                 <article class="chat-box chat-box-global">
-                    <h2>Public Chats</h2>
-                    <ul class="chat-list">
-                        <li v-if="!globalChats.length"><em>No global chats yet.</em></li>
-                        <li
-                            v-for="chat of globalChats"
-                            :key="chat.url"
-                            :class="{
-                                'chat-global-item-full': isGlobalChatFull(chat),
-                                'chat-item-owned': isOwnedGlobalChat(chat),
-                            }"
-                        >
-                            <button
-                                type="button"
-                                @click="changeChat(chat)"
-                                class="chat-link"
-                                :disabled="isGlobalChatClosedToJoin(chat)"
+                    <h2 class="chat-box-global-heading">Public Chats</h2>
+                    <div class="chat-box-global-scroll">
+                        <ul class="chat-list">
+                            <li v-if="!globalChats.length"><em>No global chats yet.</em></li>
+                            <li
+                                v-for="chat of globalChats"
+                                :key="chat.url"
+                                :class="{
+                                    'chat-global-item-full': isGlobalChatFull(chat),
+                                    'chat-item-owned': isOwnedGlobalChat(chat),
+                                }"
                             >
-                                <span class="chat-global-title-core">{{
-                                    globalChatDisplayTitleWithSpectating(chat)
-                                }}</span>
-                                <span class="chat-global-meta">{{ globalChatPublicMetaSuffix(chat) }}</span>
-                            </button>
-                        </li>
-                    </ul>
+                                <button
+                                    type="button"
+                                    @click="changeChat(chat)"
+                                    class="chat-link"
+                                    :disabled="isGlobalChatClosedToJoin(chat)"
+                                >
+                                    <span class="chat-global-title-core">{{
+                                        globalChatDisplayTitleWithSpectating(chat)
+                                    }}</span>
+                                    <span class="chat-global-meta">{{ globalChatPublicMetaSuffix(chat) }}</span>
+                                </button>
+                            </li>
+                        </ul>
+                    </div>
                 </article>
             </section>
 
@@ -144,4 +147,5 @@
                         </div>
                     </form>
                 </section>
+            </div>
             </div>

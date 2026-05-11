@@ -1,3 +1,3 @@
 export default {
-  template: `<router-view />`,
+  template: `<div class="home-route-shell"><router-view /></div>`,
 };
